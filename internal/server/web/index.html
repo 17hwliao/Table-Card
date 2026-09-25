@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17231f">
+  <title>牌桌 · Card Table</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #101714; color: #f5f1df; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(ellipse at 50% 20%, #294337, #101714 65%); }
+    main { width: min(980px, 92vw); margin: 0 auto; padding: 9vh 0 48px; }
+    header { margin-bottom: 36px; }
+    .eyebrow { color: #c8a45e; letter-spacing: .2em; font-size: 12px; text-transform: uppercase; }
+    h1 { margin: 8px 0; font: 600 clamp(38px, 7vw, 66px)/1.05 Georgia, "Microsoft YaHei", serif; letter-spacing: .04em; }
+    header p { color: #bac7bb; max-width: 600px; line-height: 1.7; }
+    .panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 24px; background: #18221edc; border: 1px solid #82947c44; border-radius: 18px; box-shadow: 0 24px 80px #0005; }
+    label { display: grid; gap: 8px; color: #c7d0c5; font-size: 14px; }
+    select, input { width: 100%; padding: 13px 14px; border: 1px solid #5c7064; border-radius: 9px; color: #f5f1df; background: #101814; font: inherit; }
+    button { align-self: end; min-height: 46px; border: 0; border-radius: 9px; padding: 12px 18px; color: #1a2018; background: #d1b16e; font: inherit; font-weight: 700; cursor: pointer; }
+    button:hover { background: #e5c989; }
+    #result { grid-column: 1 / -1; min-height: 24px; margin: 0; color: #d4ddce; overflow-wrap: anywhere; }
+    .modes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+    .tag { padding: 7px 10px; border: 1px solid #607365; border-radius: 999px; color: #c7d0c5; font-size: 12px; }
+    footer { margin-top: 26px; color: #8d9c90; font-size: 12px; }
+    @media(max-width: 600px) { .panel { grid-template-columns: 1fr; padding: 18px; } #result { grid-column: auto; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Independent tabletop games</div>
+      <h1>牌桌</h1>
+      <p>选择一种游戏并创建房间。各模式会接入统一的房间、对局状态和机器人基础。</p>
+      <div id="modes" class="modes" aria-label="游戏模式"></div>
+    </header>
+    <section class="panel" aria-label="创建游戏房间">
+      <label>游戏模式<select id="mode"></select></label>
+      <label>座位数<select id="seats"></select></label>
+      <label>玩家名称<input id="name" maxlength="24" value="玩家 1" autocomplete="nickname"></label>
+      <label>玩家编号<input id="playerId" maxlength="40" autocomplete="off" placeholder="自动生成"></label>
+      <label>房间号<input id="roomCode" maxlength="6" autocomplete="off" placeholder="创建后自动填入，也可输入好友房间号"></label>
+      <button id="create">创建房间</button>
+      <button id="join">加入房间</button>
+      <button id="ready">准备</button>
+      <button id="start">开始对局</button>
+      <p id="result" role="status">准备就绪</p>
+    </section>
+    <footer>本地运行 · 游戏规则与 UI 正在独立实现</footer>
+  </main>
+  <script>
+    const modeSelect = document.querySelector('#mode');
+    const seatsSelect = document.querySelector('#seats');
+    const status = document.querySelector('#result');
+    let modes = [];
+    function refreshSeats() {
+      const mode = modes.find(item => item.id === modeSelect.value);
+      seatsSelect.replaceChildren();
+      if (!mode) return;
+      for (let n = mode.minSeats; n <= mode.maxSeats; n++) {
+        const option = new Option(`${n} 人`, String(n));
+        seatsSelect.add(option);
+      }
+    }
+    async function loadModes() {
+      const response = await fetch('/api/modes');
+      if (!response.ok) throw new Error('无法读取游戏模式');
+      modes = await response.json();
+      for (const mode of modes) {
+        modeSelect.add(new Option(mode.name, mode.id));
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = mode.name;
+        document.querySelector('#modes').append(tag);
+      }
+      refreshSeats();
+    }
+    modeSelect.addEventListener('change', refreshSeats);
+    function identity() {
+      const name = document.querySelector('#name').value.trim();
+      const idInput = document.querySelector('#playerId');
+      const playerId = idInput.value.trim() || crypto.randomUUID();
+      idInput.value = playerId;
+      return { playerId, name };
+    }
+    async function roomAction(action, body = {}) {
+      const code = document.querySelector('#roomCode').value.trim().toUpperCase();
+      if (!code) throw new Error('请先输入房间号');
+      const response = await fetch(`/api/rooms/${encodeURIComponent(code)}/${action}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '操作失败');
+      status.textContent = `${data.code} · ${data.players.map(player => `${player.name}${player.ready ? ' ✓' : ''}`).join(' / ')} · ${data.phase === 1 ? '进行中' : '等待玩家'}`;
+    }
+    document.querySelector('#create').addEventListener('click', async () => {
+      status.textContent = '正在创建房间…';
+      const name = document.querySelector('#name').value.trim();
+      const playerId = document.querySelector('#playerId').value.trim() || crypto.randomUUID();
+      try {
+        const response = await fetch('/api/rooms', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: modeSelect.value, seats: Number(seatsSelect.value), name, playerId })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '创建失败');
+        document.querySelector('#playerId').value = playerId;
+        document.querySelector('#roomCode').value = data.code;
+        status.textContent = `房间 ${data.code} 已创建 · ${data.players.length}/${data.seats} 人 · ${data.mode}`;
+      } catch (error) { status.textContent = error.message; }
+    });
+    document.querySelector('#join').addEventListener('click', async () => {
+      try { await roomAction('join', identity()); } catch (error) { status.textContent = error.message; }
+    });
+    document.querySelector('#ready').addEventListener('click', async () => {
+      try { await roomAction('ready', { playerId: identity().playerId, ready: true }); } catch (error) { status.textContent = error.message; }
+    });
+    document.querySelector('#start').addEventListener('click', async () => {
+      try { await roomAction('start'); } catch (error) { status.textContent = error.message; }
+    });
+    loadModes().catch(error => { status.textContent = error.message; });
+  </script>
+</body>
+</html>

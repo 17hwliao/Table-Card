@@ -1,8 +1,35 @@
 package main
 
-import "fmt"
+import (
+	"flag"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/17hwliao/table-card-independent/internal/server"
+)
 
 func main() {
-	fmt.Println("Table-Card Independent")
-	fmt.Println("本地独立开发骨架已启动；当前实现包含斗地主牌组与牌型规则库。")
+	address := flag.String("listen", ":8080", "HTTP 监听地址")
+	flag.Parse()
+
+	httpServer := &http.Server{
+		Addr:              *address,
+		Handler:           server.New().Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	stopped := make(chan os.Signal, 1)
+	signal.Notify(stopped, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-stopped
+		_ = httpServer.Close()
+	}()
+
+	log.Printf("牌桌大厅已启动：http://localhost%s", *address)
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
 }

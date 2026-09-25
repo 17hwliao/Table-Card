@@ -111,6 +111,9 @@ func (r *Room) Join(player Player) error {
 	if r.phase != Waiting {
 		return ErrRoomStarted
 	}
+	if player.ID == "" || player.Name == "" {
+		return fmt.Errorf("加入房间需要有效玩家身份")
+	}
 	for _, current := range r.players {
 		if current.ID == player.ID {
 			return ErrDuplicatePlayer
