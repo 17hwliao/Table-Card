@@ -4,7 +4,7 @@ A locally developed multiplayer tabletop game project. This repository starts fr
 
 ## Current scope
 
-The first implementation slice defines a standard 54-card deck, an independent landlord-hand classifier/comparison engine, round transitions, a room lifecycle model, the first decision-making bot, **Sunjiajia**, and a small browser lobby backed by an HTTP API. The application is built on explicit game-state transitions rather than a renderer-driven game loop.
+The first implementation slice defines a standard 54-card deck, an independent landlord-hand classifier/comparison engine, the first decision-making bot, **Sunjiajia**, a Liar's Bar rules engine, and a small browser lobby backed by an HTTP API. The application is built on explicit game-state transitions rather than a renderer-driven game loop.
 
 Sunjiajia is a new heuristic player. It evaluates hand structure, ranks, bombs and jokers, avoids taking a teammate's trick when safe, and spends stronger combinations more readily when an opponent is close to going out. Its behavior and tuning are documented in [`docs/sunjiajia-design.md`](docs/sunjiajia-design.md).
 
@@ -13,6 +13,7 @@ Sunjiajia is a new heuristic player. It evaluates hand structure, ranks, bombs a
 - `internal/cards`: card identities, deck creation, shuffling and ordering.
 - `internal/landlord`: landlord hand types and round rules.
 - `internal/bot/sunjiajia`: independent landlord bot strategy and move generation.
+- `internal/liarbar`: hidden-card challenges, fixed-chamber roulette and elimination state.
 - `internal/table`: room membership, seats, readiness and game lifecycle.
 - `internal/wire`: versioned client/server messages.
 - `internal/client` and `internal/server`: transport-facing adapters.
@@ -29,4 +30,4 @@ go build ./...
 
 Install Go, then run `start-table-card.bat` on Windows or `./start-table-card.ps1` in PowerShell. Open <http://localhost:8080>. Docker is not required. To choose another port, run `go run ./cmd/table-card -listen :8090`.
 
-The lobby currently supports mode selection and room creation, joining, readiness, and start checks. The listed modes are the planned catalog; game screens and each mode's rules are being implemented in stages.
+The lobby currently supports mode selection and room creation, joining, readiness, and start checks. The catalog lists the target modes; only the landlord and Liar's Bar rule packages have started, and all game screens plus the remaining modes still need implementation and room integration.

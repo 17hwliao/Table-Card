@@ -7,6 +7,7 @@ import (
 
 	"github.com/17hwliao/table-card-independent/internal/cards"
 	"github.com/17hwliao/table-card-independent/internal/landlord"
+	"github.com/17hwliao/table-card-independent/internal/liarbar"
 )
 
 // Agent is a self-contained heuristic player. Its choices are reproducible for
@@ -24,6 +25,57 @@ type Candidate struct {
 	Cards   []cards.Card
 	Pattern landlord.Hand
 	Score   float64
+}
+
+// ChooseLiarBarPlay prefers truthful cards and otherwise makes a small bluff
+// to preserve stronger cards. It returns IDs from the private hand view.
+func (Agent) ChooseLiarBarPlay(hand []liarbar.Card, target liarbar.Rank) []uint8 {
+	truthful := make([]liarbar.Card, 0, len(hand))
+	for _, card := range hand {
+		if card.Rank == target || card.Rank == liarbar.Joker {
+			truthful = append(truthful, card)
+		}
+	}
+	pool := hand
+	if len(truthful) > 0 {
+		pool = truthful
+	}
+	count := min(len(pool), 2)
+	if count == 0 {
+		return nil
+	}
+	ids := make([]uint8, count)
+	for i := 0; i < count; i++ {
+		ids[i] = pool[i].ID
+	}
+	return ids
+}
+
+// ShouldChallenge is deliberately risk-aware: larger plays are more likely to
+// contain a lie, while a bot near the sixth shot demands stronger evidence.
+func (Agent) ShouldChallenge(view liarbar.Snapshot, playerID string) bool {
+	if view.Pending == nil || !view.Pending.CanCall || view.Phase != liarbar.RoundActive {
+		return false
+	}
+	selfShots := 0
+	for _, player := range view.Players {
+		if player.ID == playerID {
+			selfShots = player.Shots
+			break
+		}
+	}
+	confidence := 0.30 + float64(view.Pending.Count-1)*0.15
+	if view.Pending.Count == 3 {
+		confidence += 0.08
+	}
+	threshold := 0.53
+	if selfShots >= 4 {
+		threshold += 0.18
+	}
+	if seat := view.Pending.Seat; seat >= 0 && seat < len(view.Players) && view.Players[seat].Shots >= 4 {
+		confidence += 0.10
+	}
+	return confidence >= threshold
 }
 
 func (Agent) Bid(hand []cards.Card) int {

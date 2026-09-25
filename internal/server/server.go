@@ -23,17 +23,18 @@ type modeInfo struct {
 	Name     string     `json:"name"`
 	MinSeats int        `json:"minSeats"`
 	MaxSeats int        `json:"maxSeats"`
+	Progress string     `json:"progress"`
 }
 
 var modes = []modeInfo{
-	{table.LandlordMode, "斗地主", 3, 3},
-	{table.LiarBarMode, "骗子酒馆", 4, 4},
-	{table.MahjongMode, "四川麻将", 4, 4},
-	{table.ChessMode, "中国象棋", 2, 2},
-	{table.WesternChessMode, "国际象棋", 2, 2},
-	{table.GomokuMode, "五子棋", 2, 2},
-	{table.GoMode, "围棋", 2, 2},
-	{table.UNOMode, "UNO", 2, 4},
+	{table.LandlordMode, "斗地主", 3, 3, "牌型规则与 Sunjiajia 机器人基础"},
+	{table.LiarBarMode, "骗子酒馆", 4, 4, "对局规则引擎"},
+	{table.MahjongMode, "四川麻将", 4, 4, "开发中"},
+	{table.ChessMode, "中国象棋", 2, 2, "开发中"},
+	{table.WesternChessMode, "国际象棋", 2, 2, "开发中"},
+	{table.GomokuMode, "五子棋", 2, 2, "开发中"},
+	{table.GoMode, "围棋", 2, 2, "开发中"},
+	{table.UNOMode, "UNO", 2, 4, "开发中"},
 }
 
 func New() *Server {

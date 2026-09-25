@@ -1,6 +1,6 @@
 # Sunjiajia bot design
 
-Sunjiajia is the first computer player for the independent Table-Card codebase. The implementation is original Go code and uses the local game model; it does not load or embed code from the earlier project.
+Sunjiajia is the computer-player design for the independent Table-Card codebase. The implementation is original Go code and uses the local game models; it does not load or embed code from the earlier project.
 
 ## Decisions
 
@@ -23,3 +23,7 @@ When the opposing team is leading, farmers usually pass to preserve their teamma
 The caller supplies the bot's seat, landlord seat, each player's remaining card count, and the current trick. The bot returns a selected set of cards or `nil` to pass. It does not own a network connection, room state, timer, or UI.
 
 The initial version is deterministic and single-ply. It does not yet account for hidden-card probabilities, score/risk settings, farmer signaling, or long-horizon search. Those can be added behind this interface without coupling the strategy to the UI or transport.
+
+### Liar's Bar
+
+The same agent also has a simple Liar's Bar policy. It chooses target cards and Jokers when available, otherwise bluffs with a small number of cards. Its challenge threshold rises with the number of hidden cards and with an opponent's shot count, and becomes more conservative when the bot itself is close to six shots. The hidden chamber is never part of the bot's input, so the policy cannot cheat by reading the random outcome.
