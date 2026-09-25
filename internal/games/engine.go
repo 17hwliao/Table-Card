@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/17hwliao/table-card-independent/internal/chinesechess"
 	"github.com/17hwliao/table-card-independent/internal/gomoku"
 	"github.com/17hwliao/table-card-independent/internal/table"
 )
@@ -65,6 +66,9 @@ func NewDefaultRegistry() *Registry {
 	_ = registry.Register(table.LiarBarMode, newLiarBarEngine)
 	_ = registry.Register(table.GomokuMode, func(players []table.Player) (Engine, error) {
 		return gomoku.NewEngine(players)
+	})
+	_ = registry.Register(table.ChessMode, func(players []table.Player) (Engine, error) {
+		return chinesechess.NewEngine(players)
 	})
 	return registry
 }

@@ -89,6 +89,22 @@
     .lastMove { outline:2px solid #c84031; outline-offset:-5px; border-radius:50%; }
     .hoshiDot { position:absolute; z-index:1; left:50%; top:50%; width:5px; height:5px; transform:translate(-50%,-50%); border-radius:50%; background:#54391f; }
     .gomokuStatus { color:#d7c48c; }
+    #chineseChessBoard { grid-column:1/-1; padding:20px; border:1px solid #82947c44; border-radius:18px; background:linear-gradient(145deg,#1b2b23,#101914); }
+    .chessHeader { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .chessHeader h2 { margin:0; font:600 22px Georgia,"Microsoft YaHei",serif; }
+    #xiangqiGrid { position:relative; display:grid; grid-template-columns:repeat(9,1fr); grid-template-rows:repeat(10,1fr); width:min(92vw,540px); aspect-ratio:8/9; margin:auto; padding:3%; border:2px solid #674720; border-radius:5px; background:linear-gradient(135deg,#dfbb7c,#b88548); box-shadow:inset 0 0 25px #6d4626aa,0 16px 38px #0005; }
+    .chessCell { position:relative; min-width:0; min-height:0; padding:0; border:0; border-radius:0; background:transparent; }
+    .chessCell::before,.chessCell::after { content:""; position:absolute; z-index:0; background:#54391f; }
+    .chessCell::before { left:0; right:0; top:50%; height:1px; }
+    .chessCell::after { top:0; bottom:0; left:50%; width:1px; }
+    .chessCell:hover { background:#ffffff16; }
+    .chessPiece { position:absolute; z-index:2; left:50%; top:50%; display:grid; place-items:center; width:82%; height:82%; transform:translate(-50%,-50%); border:2px solid #714b27; border-radius:50%; color:#242018; background:radial-gradient(circle at 35% 30%,#fff2d4,#d8ba83 68%,#987045); box-shadow:2px 3px 5px #0006; font:700 clamp(13px,2.6vw,22px) "Microsoft YaHei",sans-serif; }
+    .chessPiece.red { color:#a82920; }
+    .chessPiece.black { color:#20231f; }
+    .chessCell.selected .chessPiece { outline:3px solid #f1d078; outline-offset:2px; }
+    .chessCell.lastMove .chessPiece { box-shadow:0 0 0 2px #bc4035,2px 3px 5px #0006; }
+    .chessRiver { position:absolute; z-index:1; left:3%; right:3%; top:44.4%; display:flex; justify-content:space-around; color:#674720; font:600 clamp(10px,2.2vw,17px) "Microsoft YaHei",sans-serif; pointer-events:none; }
+    .chessStatus { color:#d7c48c; }
     #chatLog { display: flex; flex-direction: column; gap: 8px; min-height: 180px; max-height: 270px; overflow: auto; padding: 0; list-style: none; }
     #chatLog li { color: #d4ddce; overflow-wrap: anywhere; }
     #chatLog strong { color: #d1b16e; }
@@ -139,6 +155,10 @@
         <div class="gomokuHeader"><h2>五子棋</h2><div class="gomokuStatus" id="gomokuStatus">等待玩家</div></div>
         <div id="gomokuGrid" aria-label="五子棋棋盘"></div>
       </div>
+      <div id="chineseChessBoard" hidden>
+        <div class="chessHeader"><h2>中国象棋</h2><div id="xiangqiStatus" class="chessStatus">等待玩家</div></div>
+        <div id="xiangqiGrid" aria-label="中国象棋棋盘"><div class="chessRiver"><span>楚 河</span><span>汉 界</span></div></div>
+      </div>
       <div id="liarBoard" hidden>
         <div class="barHeader"><h2>骗子酒馆</h2><div id="barTarget" class="targetBadge">本局牌 —</div></div>
         <div class="barTable" id="barTable">
@@ -170,6 +190,7 @@
     let roomView = null;
     let gameView = null;
     let selectedCards = new Set();
+    let selectedChess = null;
     function refreshSeats() {
       const mode = modes.find(item => item.id === modeSelect.value);
       document.querySelector('#trainingOption').hidden = mode?.id !== 'landlord';
@@ -258,13 +279,16 @@
       const isLiarBar = roomView?.mode === 'liar_bar' && gameView?.players;
       const isLandlord = roomView?.mode === 'landlord' && gameView?.phase !== undefined;
       const isGomoku = roomView?.mode === 'gomoku' && gameView?.board;
+      const isChineseChess = roomView?.mode === 'chess' && gameView?.board;
       document.querySelector('#liarBoard').hidden = !isLiarBar;
       document.querySelector('#landlordBoard').hidden = !isLandlord;
       document.querySelector('#gomokuBoard').hidden = !isGomoku;
-      document.querySelector('#gameDebugPanel').hidden = isLiarBar || isLandlord || isGomoku;
+      document.querySelector('#chineseChessBoard').hidden = !isChineseChess;
+      document.querySelector('#gameDebugPanel').hidden = isLiarBar || isLandlord || isGomoku || isChineseChess;
       if (isLiarBar) renderLiarBar();
       if (isLandlord) renderLandlord();
       if (isGomoku) renderGomoku();
+      if (isChineseChess) renderChineseChess();
     }
     function renderLiarBar() {
       const playerId = document.querySelector('#playerId').value;
@@ -425,6 +449,55 @@
             cell.append(dot);
           }
           cell.addEventListener('click', () => sendGameAction({ type: 'place', x, y }));
+          grid.append(cell);
+        }
+      }
+    }
+    function renderChineseChess() {
+      const playerId = document.querySelector('#playerId').value;
+      const ownSeat = roomView.players.findIndex(player => player.id === playerId);
+      const currentName = roomView.players.find(player => player.id === gameView.turnPlayer)?.name || '玩家';
+      const ended = Boolean(gameView.winner || gameView.draw);
+      const winnerName = roomView.players.find(player => player.id === gameView.winner)?.name;
+      const checking = gameView.inCheck ? ' · 将军' : '';
+      document.querySelector('#xiangqiStatus').textContent = gameView.winner ? `${winnerName || '玩家'} 获胜` : gameView.draw ? '和棋' : `${currentName}行动 · ${gameView.turn === 1 ? '红方' : '黑方'}${gameView.turnPlayer === playerId ? '（轮到你）' : ''}${checking}`;
+      const grid = document.querySelector('#xiangqiGrid');
+      const river = grid.querySelector('.chessRiver');
+      grid.replaceChildren(river);
+      const redNames = ['', '帅', '仕', '相', '马', '车', '炮', '兵'];
+      const blackNames = ['', '将', '士', '象', '马', '车', '炮', '卒'];
+      for (let y = 0; y < 10; y++) {
+        for (let x = 0; x < 9; x++) {
+          const piece = gameView.board[y][x];
+          const pointIsSelected = selectedChess?.x === x && selectedChess?.y === y;
+          const isLast = gameView.lastMove && ((gameView.lastMove.from.x === x && gameView.lastMove.from.y === y) || (gameView.lastMove.to.x === x && gameView.lastMove.to.y === y));
+          const cell = document.createElement('button');
+          cell.className = `chessCell${pointIsSelected ? ' selected' : ''}${isLast ? ' lastMove' : ''}`;
+          cell.setAttribute('aria-label', `${x + 1} 路 ${10 - y} 行`);
+          cell.disabled = ended || ownSeat < 0 || gameView.turnPlayer !== playerId;
+          if (piece.kind) {
+            const stone = document.createElement('span');
+            stone.className = `chessPiece ${piece.side === 1 ? 'red' : 'black'}`;
+            stone.textContent = (piece.side === 1 ? redNames : blackNames)[piece.kind] || '?';
+            cell.append(stone);
+          }
+          cell.addEventListener('click', () => {
+            if (!selectedChess) {
+              if (piece.side === gameView.turn) {
+                selectedChess = { x, y };
+                renderChineseChess();
+              }
+              return;
+            }
+            if (piece.side === gameView.turn) {
+              selectedChess = { x, y };
+              renderChineseChess();
+              return;
+            }
+            const from = selectedChess;
+            selectedChess = null;
+            sendGameAction({ type: 'move', fromX: from.x, fromY: from.y, toX: x, toY: y });
+          });
           grid.append(cell);
         }
       }

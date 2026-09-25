@@ -36,7 +36,7 @@ var modes = []modeInfo{
 	{table.LandlordMode, "斗地主", 3, 3, "Sunjiajia 人机训练与基础牌桌已接入"},
 	{table.LiarBarMode, "骗子酒馆", 4, 4, "规则引擎与基础牌桌已接入"},
 	{table.MahjongMode, "四川麻将", 4, 4, "开发中"},
-	{table.ChessMode, "中国象棋", 2, 2, "开发中"},
+	{table.ChessMode, "中国象棋", 2, 2, "合法走子规则与鼠标棋盘已接入"},
 	{table.WesternChessMode, "国际象棋", 2, 2, "开发中"},
 	{table.GomokuMode, "五子棋", 2, 2, "规则引擎与鼠标棋盘已接入"},
 	{table.GoMode, "围棋", 2, 2, "开发中"},
