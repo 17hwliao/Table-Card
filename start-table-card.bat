@@ -1,11 +1,6 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-where go >nul 2>nul
-if errorlevel 1 (
-  echo Go was not found. Install Go, then run this script again.
-  pause
-  exit /b 1
-)
-go run ./cmd/table-card %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-table-card.ps1" %*
+if errorlevel 1 echo.
 pause

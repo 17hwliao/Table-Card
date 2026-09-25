@@ -1,7 +1,6 @@
 package server
 
 import (
-	"embed"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,9 +11,6 @@ import (
 	"github.com/17hwliao/table-card-independent/internal/games"
 	"github.com/17hwliao/table-card-independent/internal/table"
 )
-
-//go:embed web/index.html
-var assets embed.FS
 
 type Server struct {
 	rooms    *table.RoomManager
@@ -35,12 +31,12 @@ type modeInfo struct {
 var modes = []modeInfo{
 	{table.LandlordMode, "斗地主", 3, 3, "Sunjiajia 人机训练与基础牌桌已接入"},
 	{table.LiarBarMode, "骗子酒馆", 4, 4, "规则引擎与基础牌桌已接入"},
-	{table.MahjongMode, "四川麻将", 4, 4, "开发中"},
-	{table.ChessMode, "中国象棋", 2, 2, "合法走子规则与鼠标棋盘已接入"},
-	{table.WesternChessMode, "国际象棋", 2, 2, "开发中"},
-	{table.GomokuMode, "五子棋", 2, 2, "规则引擎与鼠标棋盘已接入"},
-	{table.GoMode, "围棋", 2, 2, "开发中"},
-	{table.UNOMode, "UNO", 2, 4, "开发中"},
+	{table.MahjongMode, "四川麻将", 4, 4, "血战规则引擎与定缺流程已接入"},
+	{table.ChessMode, "中国象棋", 2, 2, "合法走子规则与终端棋盘已接入"},
+	{table.WesternChessMode, "国际象棋", 2, 2, "规则引擎与终端棋盘已接入"},
+	{table.GomokuMode, "五子棋", 2, 2, "规则引擎与终端棋盘已接入"},
+	{table.GoMode, "围棋", 2, 2, "19 路规则引擎与终端棋盘已接入"},
+	{table.UNOMode, "UNO", 2, 4, "108 张牌规则引擎已接入"},
 }
 
 func New() *Server {
@@ -52,7 +48,7 @@ func New() *Server {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", s.home)
+	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/modes", s.listModes)
 	mux.HandleFunc("POST /api/rooms", s.createRoom)
@@ -66,13 +62,8 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	page, err := assets.ReadFile("web/index.html")
-	if err != nil {
-		http.Error(w, "大厅页面不可用", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(page)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte("牌桌终端服务正在运行。请在终端运行 table-card 客户端连接此服务。\n"))
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {

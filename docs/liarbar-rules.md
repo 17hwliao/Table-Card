@@ -10,4 +10,4 @@ This package implements the four-player hidden-card challenge loop as an isolate
 - Every player receives one fixed random live chamber at game start. Shot count and elimination persist across rounds; cards and target reset after a challenge.
 - The game ends when one player remains alive. `Snapshot(viewerID)` only exposes that viewer's own hand.
 
-The engine deliberately keeps rendering, room transport, and animation out of the rules package. Those will connect through the shared application layer as the browser game view is built.
+The rules package is independent from the terminal renderer and room transport. The Bubble Tea client renders each player's private view and sends actions through the shared WebSocket room service.

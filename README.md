@@ -1,40 +1,48 @@
 # Table-Card Independent
 
-A locally developed multiplayer tabletop game project. This repository starts from a clean Git history and contains a new implementation; it does not import source files, generated code, assets, or Git metadata from another repository.
+牌桌是一个以终端为完整交互界面的多人桌游项目。大厅、房间、聊天和所有游戏操作均在终端客户端中完成；服务端负责房间状态、规则校验和实时广播。
 
-## Current scope
+## 技术栈
 
-The first implementation slice defines a standard 54-card deck, an independent landlord-hand classifier/comparison engine, the first decision-making bot, **Sunjiajia**, a Liar's Bar rules engine, and a small browser lobby backed by an HTTP API. The application is built on explicit game-state transitions rather than a renderer-driven game loop.
+- Go 1.26
+- Bubble Tea v2、Bubbles v2、Lip Gloss v2：全屏终端应用、输入组件与样式
+- `net/http` 和 `coder/websocket`：轻量房间 API 与实时状态传输
+- 内存房间状态：本地启动不需要 Docker、Redis 或数据库
 
-Sunjiajia is a new heuristic player. It evaluates hand structure, ranks, bombs and jokers, avoids taking a teammate's trick when safe, and spends stronger combinations more readily when an opponent is close to going out. Its behavior and tuning are documented in [`docs/sunjiajia-design.md`](docs/sunjiajia-design.md).
+## 启动
 
-## Planned structure
+Windows 双击 `start-table-card.bat`，启动一个终端客户端。启动脚本会构建并后台启动本地服务端；关闭所有客户端后，它会关闭本次启动的服务端。
 
-- `internal/cards`: card identities, deck creation, shuffling and ordering.
-- `internal/landlord`: landlord hand types and round rules.
-- `internal/bot/sunjiajia`: independent landlord bot strategy and move generation.
-- `internal/liarbar`: hidden-card challenges, fixed-chamber roulette and elimination state.
-- `internal/gomoku`: 15×15 two-player five-in-a-row rules.
-- `internal/chinesechess`: Xiangqi board, movement, check, checkmate and stalemate rules.
-- `internal/games`: shared mode registry and engine interface used to attach independent rule packages to rooms.
-- `internal/table`: room membership, seats, readiness and game lifecycle.
-- `internal/wire`: versioned client/server messages.
-- `internal/client` and `internal/server`: transport-facing adapters.
-- `internal/ui`: terminal presentation and input handling.
-- `internal/games`: independently implemented rules for the remaining modes.
+PowerShell 可指定同时打开的终端客户端数：
 
-## Build
+```powershell
+./start-table-card.ps1 -Clients 3
+```
+
+独立运行服务端与客户端：
+
+```powershell
+go run ./cmd/table-card-server -listen :1781
+go run ./cmd/table-card -server localhost:1781 -name 玩家1
+```
+
+多个客户端连到同一服务端后，在一个客户端创建房间，其余客户端输入房间号加入。大厅按 `R` 准备、按 `S` 开始；对局内按 `/` 聊天、按 `Esc` 或 `Del` 返回模式选择。
+
+## 终端操作
+
+- 大厅：方向键选择模式和座位；`E` 编辑名称；`R` 编辑房间号；`C` 创建；`J` 加入；斗地主可按 `B` 开启两个 Sunjiajia 机器人训练。
+- 棋盘：方向键移动光标，`Enter` 落子或走棋；国际象棋升变可用 `Q/R/B/N` 选择棋子，围棋用 `P` Pass。
+- 卡牌和麻将：按屏幕提示用数字键选择牌，再按操作键出牌或响应。
+- `Ctrl+C` 退出客户端。
+
+## 游戏模式
+
+斗地主、骗子酒馆、四川麻将、中国象棋、国际象棋、五子棋、围棋和 UNO 共用终端大厅与实时房间连接。各模式规则实现位于独立的 `internal` 包中，服务端统一通过房间引擎执行操作。
+
+这是持续完善中的游戏实现，部分线下房规与结算选项仍有限制，详见 [`docs/mode-migration-status.md`](docs/mode-migration-status.md)。
+
+## 构建
 
 ```powershell
 go build ./...
 ```
-
-## Run locally
-
-Install Go, then run `start-table-card.bat` on Windows or `./start-table-card.ps1` in PowerShell. Open <http://localhost:8080>. Docker is not required. To choose another port, run `go run ./cmd/table-card -listen :8090`.
-
-The lobby currently supports mode selection and room creation, joining, readiness, and start checks. A room WebSocket carries chat and per-player game state updates. Liar's Bar has a basic four-seat table with hidden cards, turn controls, challenge reveal, shot counts, and elimination. Landlord mode has a three-seat card table and optional two-bot Sunjiajia training. Gomoku and Chinese chess have mouse-click boards and server-side move validation. Mahjong, international chess, Go, and UNO remain listed as planned and cannot start a game session yet.
-
-For an active room, `GET /api/rooms/{code}/state?playerId=...` returns that player's view. `POST /api/rooms/{code}/action` accepts `{ "playerId": "...", "action": { ... } }`; each engine owns its own action schema and validates turn order and private information.
-
-The browser connects to `ws(s)://<host>/api/rooms/{code}/ws?playerId=...`. Send `{ "type": "chat", "text": "..." }` for room chat or `{ "type": "action", "action": { ... } }` for a game action. State broadcasts are personalized so each connected player only receives their own private hand.

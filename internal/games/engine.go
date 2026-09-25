@@ -7,8 +7,12 @@ import (
 	"sync"
 
 	"github.com/17hwliao/table-card-independent/internal/chinesechess"
+	"github.com/17hwliao/table-card-independent/internal/goengine"
 	"github.com/17hwliao/table-card-independent/internal/gomoku"
+	"github.com/17hwliao/table-card-independent/internal/internationalchess"
+	"github.com/17hwliao/table-card-independent/internal/mahjong"
 	"github.com/17hwliao/table-card-independent/internal/table"
+	"github.com/17hwliao/table-card-independent/internal/uno"
 )
 
 var ErrModeUnavailable = errors.New("该游戏模式的对局引擎尚未接入")
@@ -69,6 +73,18 @@ func NewDefaultRegistry() *Registry {
 	})
 	_ = registry.Register(table.ChessMode, func(players []table.Player) (Engine, error) {
 		return chinesechess.NewEngine(players)
+	})
+	_ = registry.Register(table.WesternChessMode, func(players []table.Player) (Engine, error) {
+		return internationalchess.NewEngine(players)
+	})
+	_ = registry.Register(table.GoMode, func(players []table.Player) (Engine, error) {
+		return goengine.NewEngine(players)
+	})
+	_ = registry.Register(table.UNOMode, func(players []table.Player) (Engine, error) {
+		return uno.NewEngine(players)
+	})
+	_ = registry.Register(table.MahjongMode, func(players []table.Player) (Engine, error) {
+		return mahjong.NewEngine(players)
 	})
 	return registry
 }
