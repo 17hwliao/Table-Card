@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/17hwliao/table-card-independent/internal/bot/sunjiajia"
 	"github.com/17hwliao/table-card-independent/internal/cards"
 	"github.com/17hwliao/table-card-independent/internal/landlord"
 	"github.com/17hwliao/table-card-independent/internal/table"
@@ -96,7 +97,51 @@ func (e *landlordEngine) Apply(playerID string, payload json.RawMessage) (any, e
 	default:
 		return nil, errors.New("斗地主操作类型必须是 bid 或 play")
 	}
+	if err := e.runBots(); err != nil {
+		return nil, err
+	}
 	return e.viewLocked(playerID), nil
+}
+
+func (e *landlordEngine) runBots() error {
+	for steps := 0; steps < 96; steps++ {
+		if e.round.Phase() == landlord.Complete || e.round.Phase() == landlord.Redeal {
+			return nil
+		}
+		seat := e.round.Turn()
+		if seat < 0 || seat >= len(e.players) || !e.players[seat].Bot {
+			return nil
+		}
+		agent := sunjiajia.Agent{}
+		switch e.round.Phase() {
+		case landlord.Auction:
+			bid := agent.Bid(e.round.Hand(seat))
+			if bid <= e.round.HighestBid() {
+				bid = 0
+			}
+			if err := e.round.Bid(seat, bid); err != nil {
+				return err
+			}
+			if e.round.Phase() == landlord.Redeal {
+				e.round = landlord.NewRound()
+			}
+		case landlord.Playing:
+			var counts [3]int
+			for i := range counts {
+				counts[i] = e.round.CardsLeft(i)
+			}
+			decision := agent.Choose(e.round.Hand(seat), sunjiajia.Table{
+				Seat: seat, Landlord: e.round.Landlord(), CardsLeft: counts,
+				LastTrick: e.round.CurrentTrick(),
+			})
+			if err := e.round.Play(seat, decision); err != nil {
+				return err
+			}
+		default:
+			return nil
+		}
+	}
+	return errors.New("Sunjiajia 连续操作达到安全上限")
 }
 
 func (e *landlordEngine) viewLocked(viewerID string) landlordView {

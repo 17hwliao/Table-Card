@@ -37,18 +37,18 @@ var (
 )
 
 type Player struct {
-	ID    string
-	Name  string
-	Ready bool
-	Bot   bool
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Ready bool   `json:"ready"`
+	Bot   bool   `json:"bot,omitempty"`
 }
 
 type Snapshot struct {
-	Code    string
-	Mode    Mode
-	Phase   RoomPhase
-	Seats   int
-	Players []Player
+	Code    string    `json:"code"`
+	Mode    Mode      `json:"mode"`
+	Phase   RoomPhase `json:"phase"`
+	Seats   int       `json:"seats"`
+	Players []Player  `json:"players"`
 }
 
 type Room struct {

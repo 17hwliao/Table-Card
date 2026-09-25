@@ -16,6 +16,8 @@
     header p { color: #bac7bb; max-width: 600px; line-height: 1.7; }
     .panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 24px; background: #18221edc; border: 1px solid #82947c44; border-radius: 18px; box-shadow: 0 24px 80px #0005; }
     label { display: grid; gap: 8px; color: #c7d0c5; font-size: 14px; }
+    .checkLabel { display: flex; align-items: center; gap: 10px; }
+    .checkLabel input { width: auto; accent-color: #d1b16e; }
     select, input { width: 100%; padding: 13px 14px; border: 1px solid #5c7064; border-radius: 9px; color: #f5f1df; background: #101814; font: inherit; }
     button { align-self: end; min-height: 46px; border: 0; border-radius: 9px; padding: 12px 18px; color: #1a2018; background: #d1b16e; font: inherit; font-weight: 700; cursor: pointer; }
     button:hover { background: #e5c989; }
@@ -53,6 +55,25 @@
     .barCard:disabled { cursor: default; opacity: .8; }
     .barActions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 12px; }
     .barActions button.secondary { color: #d4ddce; border: 1px solid #78907c; background: #25392d; }
+    #landlordBoard { grid-column: 1 / -1; padding: 20px; border: 1px solid #82947c44; border-radius: 18px; background: linear-gradient(145deg, #1b2b23, #101914); }
+    .landlordHeader { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+    .landlordHeader h2 { margin:0; font:600 22px Georgia,"Microsoft YaHei",serif; }
+    .landlordTable { display:grid; grid-template-areas:"left center right" "bottom bottom bottom"; grid-template-columns:1fr 1.2fr 1fr; gap:14px; align-items:center; min-height:260px; padding:18px; border:1px solid #67856b; border-radius:28px; background:radial-gradient(ellipse,#315942,#1b3b2b 72%,#142d20); }
+    .landlordSeat { min-width:0; padding:10px; border:1px solid #9aac8d55; border-radius:12px; text-align:center; background:#10271ec9; }
+    .landlordSeat.left { grid-area:left; } .landlordSeat.right { grid-area:right; } .landlordSeat.bottom { grid-area:bottom; justify-self:center; min-width:44%; border-color:#d1b16e; }
+    .landlordSeat.active { box-shadow:0 0 0 2px #f6d78f,0 0 24px #d1b16e55; }
+    .landlordSeat strong { display:block; color:#f3e9d1; }
+    .landlordSeat small { color:#bdcbbd; }
+    .landlordCenter { grid-area:center; padding:14px; border-radius:14px; text-align:center; background:#0c2118aa; color:#e7e2cf; }
+    .landlordCenter h3 { margin:0 0 8px; color:#f6d78f; }
+    #landlordTrick { min-height:32px; color:#fff4da; }
+    #landlordBottom { margin-top:8px; color:#d7c48c; font-size:13px; }
+    #landlordHand { display:flex; justify-content:center; flex-wrap:wrap; gap:6px; min-height:100px; margin-top:16px; }
+    .playingCard { width:54px; height:80px; border:1px solid #d7d0bd; border-radius:7px; color:#243329; background:linear-gradient(135deg,#fffef5,#d9dfd3); box-shadow:0 5px 10px #0004; font:700 16px Georgia,serif; cursor:pointer; transition:transform .12s; }
+    .playingCard.selected { transform:translateY(-9px); outline:2px solid #e5be65; }
+    .playingCard.red { color:#ab3333; } .playingCard:disabled { cursor:default; }
+    .landlordActions { display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .landlordActions .secondary { color:#d4ddce; border:1px solid #78907c; background:#25392d; }
     #chatLog { display: flex; flex-direction: column; gap: 8px; min-height: 180px; max-height: 270px; overflow: auto; padding: 0; list-style: none; }
     #chatLog li { color: #d4ddce; overflow-wrap: anywhere; }
     #chatLog strong { color: #d1b16e; }
@@ -77,6 +98,7 @@
       <label>玩家名称<input id="name" maxlength="24" value="玩家 1" autocomplete="nickname"></label>
       <label>玩家编号<input id="playerId" maxlength="40" autocomplete="off" placeholder="自动生成"></label>
       <label>房间号<input id="roomCode" maxlength="6" autocomplete="off" placeholder="创建后自动填入，也可输入好友房间号"></label>
+      <label id="trainingOption" class="checkLabel"><input id="trainingBots" type="checkbox">斗地主人机训练（2 个 Sunjiajia）</label>
       <button id="create">创建房间</button>
       <button id="join">加入房间</button>
       <button id="ready">准备</button>
@@ -84,6 +106,20 @@
       <p id="result" role="status">准备就绪</p>
     </section>
     <section id="liveRoom" hidden aria-label="实时房间">
+      <div id="landlordBoard" hidden>
+        <div class="landlordHeader"><h2>斗地主 · Sunjiajia</h2><div id="landlordInfo" class="targetBadge"></div></div>
+        <div class="landlordTable" id="landlordTable">
+          <div class="landlordSeat left" data-seat="left"></div>
+          <div class="landlordSeat right" data-seat="right"></div>
+          <div class="landlordSeat bottom" data-seat="bottom"></div>
+          <div class="landlordCenter"><h3 id="landlordTurn">等待玩家</h3><div id="landlordTrick"></div><div id="landlordBottom"></div></div>
+        </div>
+        <div id="landlordHand"></div>
+        <div class="landlordActions" id="bidActions">
+          <button data-bid="0">不叫</button><button data-bid="1">叫 1 分</button><button data-bid="2">叫 2 分</button><button data-bid="3">叫 3 分</button>
+        </div>
+        <div class="landlordActions" id="playActions"><button id="landlordPlay">出牌</button><button id="landlordPass" class="secondary">不出</button></div>
+      </div>
       <div id="liarBoard" hidden>
         <div class="barHeader"><h2>骗子酒馆</h2><div id="barTarget" class="targetBadge">本局牌 —</div></div>
         <div class="barTable" id="barTable">
@@ -117,6 +153,8 @@
     let selectedCards = new Set();
     function refreshSeats() {
       const mode = modes.find(item => item.id === modeSelect.value);
+      document.querySelector('#trainingOption').hidden = mode?.id !== 'landlord';
+      if (mode?.id !== 'landlord') document.querySelector('#trainingBots').checked = false;
       seatsSelect.replaceChildren();
       if (!mode) return;
       for (let n = mode.minSeats; n <= mode.maxSeats; n++) {
@@ -199,10 +237,12 @@
       document.querySelector('#liveRoom').hidden = false;
       document.querySelector('#gameState').textContent = JSON.stringify({ room: roomView, game: gameView }, null, 2);
       const isLiarBar = roomView?.mode === 'liar_bar' && gameView?.players;
+      const isLandlord = roomView?.mode === 'landlord' && gameView?.phase !== undefined;
       document.querySelector('#liarBoard').hidden = !isLiarBar;
-      document.querySelector('#gameDebugPanel').hidden = isLiarBar;
-      if (!isLiarBar) return;
-      renderLiarBar();
+      document.querySelector('#landlordBoard').hidden = !isLandlord;
+      document.querySelector('#gameDebugPanel').hidden = isLiarBar || isLandlord;
+      if (isLiarBar) renderLiarBar();
+      if (isLandlord) renderLandlord();
     }
     function renderLiarBar() {
       const playerId = document.querySelector('#playerId').value;
@@ -217,7 +257,8 @@
       const pending = gameView.pending;
       document.querySelector('#barCenterText').textContent = pending ? `${gameView.players[pending.seat]?.name || '玩家'}扣下了 ${pending.count} 张牌` : '选择 1–3 张牌扣下；下一位可以跟牌或质疑';
       const challengeResult = gameView.lastChallenge;
-      const resultText = challengeResult ? `${challengeResult.bluff ? '质疑成功，发现谎言' : '质疑失败，牌面属实'} · 翻出 ${challengeResult.revealed.map(card => rankName(card.rank)).join('、')}${challengeResult.volley?.length > 1 ? ' · 多人开枪' : ''}` : '';
+      const shotText = challengeResult?.volley?.map(shot => `${gameView.players[shot.seat].name} 开枪 ${shot.shotNumber}/6${shot.eliminated ? '，淘汰' : ''}`).join('；') || '';
+      const resultText = challengeResult ? `${challengeResult.bluff ? '质疑成功，发现谎言' : '质疑失败，牌面属实'} · 翻出 ${challengeResult.revealed.map(card => rankName(card.rank)).join('、')} · ${shotText}` : '';
       document.querySelector('#barResult').textContent = gameView.winner ? `${resultText} · ${roomView.players.find(player => player.id === gameView.winner)?.name || '玩家'} 获胜` : resultText;
       const positions = ['bottom', 'left', 'top', 'right'];
       for (let seat = 0; seat < 4; seat++) {
@@ -269,6 +310,74 @@
       challenge.onclick = () => sendGameAction({ type: 'challenge' });
       if (!ownPlayer) status.textContent = '房间视图不可用，请确认玩家编号。';
     }
+    function landlordRank(rank) {
+      if (rank >= 3 && rank <= 10) return String(rank);
+      return ({ 11:'J',12:'Q',13:'K',14:'A',15:'2',16:'小王',17:'大王' })[rank] || '?';
+    }
+    function cardParts(card) { return { rank: card.Rank ?? card.rank, suit: card.Suit ?? card.suit }; }
+    function landlordCardName(card) {
+      const { rank, suit } = cardParts(card);
+      const suits = ['♠','♥','♣','♦',''];
+      return `${suits[suit] || ''}${landlordRank(rank)}`;
+    }
+    function renderLandlord() {
+      const playerId = document.querySelector('#playerId').value;
+      const ownSeat = roomView.players.findIndex(player => player.id === playerId);
+      const isTurn = ownSeat >= 0 && gameView.turnPlayer === playerId;
+      const auction = gameView.phase === 0;
+      const playing = gameView.phase === 1;
+      const cards = gameView.hand || [];
+      const idFor = card => { const p = cardParts(card); return `${p.suit}:${p.rank}`; };
+      const ids = new Set(cards.map(idFor));
+      selectedCards = new Set([...selectedCards].filter(id => ids.has(id)));
+      const landlord = gameView.landlord >= 0 ? roomView.players[gameView.landlord]?.name : '尚未确定';
+      document.querySelector('#landlordInfo').textContent = `${auction ? '叫分阶段' : playing ? '出牌阶段' : gameView.phase === 3 ? '本局结束' : '重新发牌'} · 当前最高叫分 ${gameView.highestBid} · 地主 ${landlord}`;
+      document.querySelector('#landlordTurn').textContent = gameView.phase === 3 ? `${roomView.players[gameView.winner]?.name || '玩家'} 获胜` : isTurn ? '轮到你了' : `${roomView.players[gameView.turnSeat]?.name || '玩家'}行动中`;
+      const trick = gameView.trick;
+      document.querySelector('#landlordTrick').textContent = trick ? `${roomView.players[trick.Seat]?.name || '玩家'}：${trick.Cards.map(landlordCardName).join(' ')}` : '当前没有待跟牌';
+      document.querySelector('#landlordBottom').textContent = gameView.bottom?.length ? `底牌：${gameView.bottom.map(landlordCardName).join(' ')}` : '';
+      const positions = ['bottom','left','right'];
+      for (let seat = 0; seat < 3; seat++) {
+        const relative = (seat - ownSeat + 3) % 3;
+        const box = document.querySelector(`#landlordTable [data-seat="${positions[relative]}"]`);
+        box.classList.toggle('active', gameView.turnSeat === seat && gameView.phase < 3);
+        box.replaceChildren();
+        const name = document.createElement('strong');
+        name.textContent = `${roomView.players[seat].name}${seat === ownSeat ? '（你）' : ''}${roomView.players[seat].bot ? ' · AI' : ''}`;
+        const meta = document.createElement('small');
+        meta.textContent = `${gameView.cardsLeft[seat]} 张牌${gameView.landlord === seat ? ' · 地主' : ''}`;
+        box.append(name, meta);
+      }
+      const handBox = document.querySelector('#landlordHand');
+      handBox.replaceChildren();
+      cards.forEach(card => {
+        const key = idFor(card);
+        const parts = cardParts(card);
+        const button = document.createElement('button');
+        button.className = `playingCard${[1,3].includes(parts.suit) ? ' red' : ''}${selectedCards.has(key) ? ' selected' : ''}`;
+        button.textContent = landlordCardName(card);
+        button.disabled = !isTurn || !playing;
+        button.setAttribute('aria-pressed', selectedCards.has(key));
+        button.addEventListener('click', () => {
+          if (selectedCards.has(key)) selectedCards.delete(key); else selectedCards.add(key);
+          renderLandlord();
+        });
+        handBox.append(button);
+      });
+      const bidActions = document.querySelector('#bidActions');
+      bidActions.hidden = !auction;
+      bidActions.querySelectorAll('[data-bid]').forEach(button => {
+        const bid = Number(button.dataset.bid);
+        button.disabled = !isTurn || !auction || (bid > 0 && bid <= gameView.highestBid);
+        button.onclick = () => sendGameAction({ type: 'bid', bid });
+      });
+      document.querySelector('#playActions').hidden = !playing;
+      const canFollow = trick && trick.Seat !== ownSeat;
+      document.querySelector('#landlordPlay').disabled = !isTurn || !playing || selectedCards.size === 0;
+      document.querySelector('#landlordPlay').onclick = () => sendGameAction({ type: 'play', cards: cards.filter(card => selectedCards.has(idFor(card))).map(card => { const p = cardParts(card); return { Suit: p.suit, Rank: p.rank }; }) });
+      document.querySelector('#landlordPass').disabled = !isTurn || !playing || !canFollow;
+      document.querySelector('#landlordPass').onclick = () => sendGameAction({ type: 'play', cards: [] });
+    }
     document.querySelector('#create').addEventListener('click', async () => {
       status.textContent = '正在创建房间…';
       const name = document.querySelector('#name').value.trim();
@@ -276,7 +385,7 @@
       try {
         const response = await fetch('/api/rooms', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: modeSelect.value, seats: Number(seatsSelect.value), name, playerId })
+          body: JSON.stringify({ mode: modeSelect.value, seats: Number(seatsSelect.value), bots: document.querySelector('#trainingBots').checked ? 2 : 0, name, playerId })
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '创建失败');

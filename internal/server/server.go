@@ -33,7 +33,7 @@ type modeInfo struct {
 }
 
 var modes = []modeInfo{
-	{table.LandlordMode, "斗地主", 3, 3, "规则引擎已接入，交互界面开发中"},
+	{table.LandlordMode, "斗地主", 3, 3, "Sunjiajia 人机训练与基础牌桌已接入"},
 	{table.LiarBarMode, "骗子酒馆", 4, 4, "规则引擎与基础牌桌已接入"},
 	{table.MahjongMode, "四川麻将", 4, 4, "开发中"},
 	{table.ChessMode, "中国象棋", 2, 2, "开发中"},
@@ -86,6 +86,7 @@ func (s *Server) listModes(w http.ResponseWriter, _ *http.Request) {
 type createRoomRequest struct {
 	Mode     table.Mode `json:"mode"`
 	Seats    int        `json:"seats"`
+	Bots     int        `json:"bots"`
 	PlayerID string     `json:"playerId"`
 	Name     string     `json:"name"`
 }
@@ -104,10 +105,27 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "该模式的座位数无效")
 		return
 	}
+	if request.Bots < 0 || request.Bots >= request.Seats || request.Bots > 0 && request.Mode != table.LandlordMode {
+		writeError(w, http.StatusBadRequest, "当前只有斗地主支持 Sunjiajia 人机训练，机器人数量必须小于座位数")
+		return
+	}
 	room, err := s.rooms.Create(request.Mode, request.Seats, table.Player{ID: request.PlayerID, Name: request.Name})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	for i := 0; i < request.Bots; i++ {
+		bot := table.Player{ID: room.Snapshot().Code + "-sunjiajia-" + string(rune('1'+i)), Name: "Sunjiajia " + string(rune('A'+i)), Bot: true}
+		if err := room.Join(bot); err != nil {
+			s.rooms.Remove(room.Snapshot().Code)
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if err := room.SetReady(bot.ID, true); err != nil {
+			s.rooms.Remove(room.Snapshot().Code)
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusCreated, room.Snapshot())
 }
