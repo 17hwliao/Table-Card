@@ -95,7 +95,7 @@ func (s *Server) roomWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	playerID := r.URL.Query().Get("playerId")
 	snapshot := room.Snapshot()
-	if !isRoomPlayer(snapshot, playerID) {
+	if !isHumanRoomPlayer(snapshot, playerID) {
 		http.Error(w, "玩家不在这个房间中", http.StatusForbidden)
 		return
 	}

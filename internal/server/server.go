@@ -38,7 +38,7 @@ var modes = []modeInfo{
 	{table.MahjongMode, "四川麻将", 4, 4, "开发中"},
 	{table.ChessMode, "中国象棋", 2, 2, "开发中"},
 	{table.WesternChessMode, "国际象棋", 2, 2, "开发中"},
-	{table.GomokuMode, "五子棋", 2, 2, "开发中"},
+	{table.GomokuMode, "五子棋", 2, 2, "规则引擎与鼠标棋盘已接入"},
 	{table.GoMode, "围棋", 2, 2, "开发中"},
 	{table.UNOMode, "UNO", 2, 4, "开发中"},
 }
@@ -152,7 +152,7 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		playerID := r.URL.Query().Get("playerId")
-		if !isRoomPlayer(room.Snapshot(), playerID) {
+		if !isHumanRoomPlayer(room.Snapshot(), playerID) {
 			writeError(w, http.StatusForbidden, "玩家不在这个房间中")
 			return
 		}
@@ -169,6 +169,7 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 		if !readJSON(w, r, &player) {
 			return
 		}
+		player.Bot = false
 		if err := room.Join(player); err != nil {
 			writeRoomError(w, err)
 			return
@@ -215,7 +216,7 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 		if !readJSON(w, r, &request) {
 			return
 		}
-		if !isRoomPlayer(room.Snapshot(), request.PlayerID) {
+		if !isHumanRoomPlayer(room.Snapshot(), request.PlayerID) {
 			writeError(w, http.StatusForbidden, "玩家不在这个房间中")
 			return
 		}
@@ -241,13 +242,13 @@ func (s *Server) findEngine(code string) (games.Engine, bool) {
 	return engine, ok
 }
 
-func isRoomPlayer(snapshot table.Snapshot, playerID string) bool {
+func isHumanRoomPlayer(snapshot table.Snapshot, playerID string) bool {
 	if playerID == "" {
 		return false
 	}
 	for _, player := range snapshot.Players {
 		if player.ID == playerID {
-			return true
+			return !player.Bot
 		}
 	}
 	return false

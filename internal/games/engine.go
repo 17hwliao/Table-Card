@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/17hwliao/table-card-independent/internal/gomoku"
 	"github.com/17hwliao/table-card-independent/internal/table"
 )
 
@@ -62,5 +63,8 @@ func NewDefaultRegistry() *Registry {
 	registry := NewRegistry()
 	_ = registry.Register(table.LandlordMode, newLandlordEngine)
 	_ = registry.Register(table.LiarBarMode, newLiarBarEngine)
+	_ = registry.Register(table.GomokuMode, func(players []table.Player) (Engine, error) {
+		return gomoku.NewEngine(players)
+	})
 	return registry
 }

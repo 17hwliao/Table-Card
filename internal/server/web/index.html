@@ -74,6 +74,21 @@
     .playingCard.red { color:#ab3333; } .playingCard:disabled { cursor:default; }
     .landlordActions { display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin-top:12px; }
     .landlordActions .secondary { color:#d4ddce; border:1px solid #78907c; background:#25392d; }
+    #gomokuBoard { grid-column:1/-1; padding:20px; border:1px solid #82947c44; border-radius:18px; background:linear-gradient(145deg,#1b2b23,#101914); }
+    .gomokuHeader { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .gomokuHeader h2 { margin:0; font:600 22px Georgia,"Microsoft YaHei",serif; }
+    #gomokuGrid { display:grid; grid-template-columns:repeat(15,1fr); width:min(92vw,600px); aspect-ratio:1; margin:auto; padding:9px; border-radius:10px; background:linear-gradient(135deg,#dfbb7c,#b88548); box-shadow:inset 0 0 22px #6d4626aa,0 16px 38px #0005; }
+    .gomokuCell { position:relative; min-width:0; padding:0; border:0; border-radius:0; background:transparent; }
+    .gomokuCell::before,.gomokuCell::after { content:""; position:absolute; z-index:0; background:#54391f; }
+    .gomokuCell::before { left:0; right:0; top:50%; height:1px; }
+    .gomokuCell::after { top:0; bottom:0; left:50%; width:1px; }
+    .gomokuCell:hover { background:#ffffff18; }
+    .stone { position:absolute; z-index:1; left:50%; top:50%; width:76%; height:76%; transform:translate(-50%,-50%); border-radius:50%; box-shadow:2px 3px 5px #0007; }
+    .stone.black { background:radial-gradient(circle at 35% 30%,#777,#171717 60%,#000); }
+    .stone.white { background:radial-gradient(circle at 35% 30%,#fff,#e8e4d9 65%,#a9a397); }
+    .lastMove { outline:2px solid #c84031; outline-offset:-5px; border-radius:50%; }
+    .hoshiDot { position:absolute; z-index:1; left:50%; top:50%; width:5px; height:5px; transform:translate(-50%,-50%); border-radius:50%; background:#54391f; }
+    .gomokuStatus { color:#d7c48c; }
     #chatLog { display: flex; flex-direction: column; gap: 8px; min-height: 180px; max-height: 270px; overflow: auto; padding: 0; list-style: none; }
     #chatLog li { color: #d4ddce; overflow-wrap: anywhere; }
     #chatLog strong { color: #d1b16e; }
@@ -119,6 +134,10 @@
           <button data-bid="0">不叫</button><button data-bid="1">叫 1 分</button><button data-bid="2">叫 2 分</button><button data-bid="3">叫 3 分</button>
         </div>
         <div class="landlordActions" id="playActions"><button id="landlordPlay">出牌</button><button id="landlordPass" class="secondary">不出</button></div>
+      </div>
+      <div id="gomokuBoard" hidden>
+        <div class="gomokuHeader"><h2>五子棋</h2><div class="gomokuStatus" id="gomokuStatus">等待玩家</div></div>
+        <div id="gomokuGrid" aria-label="五子棋棋盘"></div>
       </div>
       <div id="liarBoard" hidden>
         <div class="barHeader"><h2>骗子酒馆</h2><div id="barTarget" class="targetBadge">本局牌 —</div></div>
@@ -238,11 +257,14 @@
       document.querySelector('#gameState').textContent = JSON.stringify({ room: roomView, game: gameView }, null, 2);
       const isLiarBar = roomView?.mode === 'liar_bar' && gameView?.players;
       const isLandlord = roomView?.mode === 'landlord' && gameView?.phase !== undefined;
+      const isGomoku = roomView?.mode === 'gomoku' && gameView?.board;
       document.querySelector('#liarBoard').hidden = !isLiarBar;
       document.querySelector('#landlordBoard').hidden = !isLandlord;
-      document.querySelector('#gameDebugPanel').hidden = isLiarBar || isLandlord;
+      document.querySelector('#gomokuBoard').hidden = !isGomoku;
+      document.querySelector('#gameDebugPanel').hidden = isLiarBar || isLandlord || isGomoku;
       if (isLiarBar) renderLiarBar();
       if (isLandlord) renderLandlord();
+      if (isGomoku) renderGomoku();
     }
     function renderLiarBar() {
       const playerId = document.querySelector('#playerId').value;
@@ -377,6 +399,35 @@
       document.querySelector('#landlordPlay').onclick = () => sendGameAction({ type: 'play', cards: cards.filter(card => selectedCards.has(idFor(card))).map(card => { const p = cardParts(card); return { Suit: p.suit, Rank: p.rank }; }) });
       document.querySelector('#landlordPass').disabled = !isTurn || !playing || !canFollow;
       document.querySelector('#landlordPass').onclick = () => sendGameAction({ type: 'play', cards: [] });
+    }
+    function renderGomoku() {
+      const playerId = document.querySelector('#playerId').value;
+      const ownSeat = roomView.players.findIndex(player => player.id === playerId);
+      const currentName = roomView.players.find(player => player.id === gameView.turnPlayer)?.name || '玩家';
+      const ended = Boolean(gameView.winner || gameView.draw);
+      const winnerName = roomView.players.find(player => player.id === gameView.winner)?.name;
+      document.querySelector('#gomokuStatus').textContent = gameView.winner ? `${winnerName || '玩家'} 获胜` : gameView.draw ? '平局' : `${currentName}行动 · ${gameView.turn === 1 ? '黑棋' : '白棋'}${gameView.turnPlayer === playerId ? '（轮到你）' : ''}`;
+      const grid = document.querySelector('#gomokuGrid');
+      grid.replaceChildren();
+      for (let y = 0; y < 15; y++) {
+        for (let x = 0; x < 15; x++) {
+          const cell = document.createElement('button');
+          cell.className = 'gomokuCell';
+          cell.setAttribute('aria-label', `${x + 1} 列 ${y + 1} 行`);
+          cell.disabled = ended || ownSeat < 0 || gameView.turnPlayer !== playerId || gameView.board[y][x] !== 0;
+          if (gameView.board[y][x] !== 0) {
+            const stone = document.createElement('span');
+            stone.className = `stone ${gameView.board[y][x] === 1 ? 'black' : 'white'}${gameView.lastMove?.x === x && gameView.lastMove?.y === y ? ' lastMove' : ''}`;
+            cell.append(stone);
+          } else if ([3,7,11].includes(x) && [3,7,11].includes(y)) {
+            const dot = document.createElement('span');
+            dot.className = 'hoshiDot';
+            cell.append(dot);
+          }
+          cell.addEventListener('click', () => sendGameAction({ type: 'place', x, y }));
+          grid.append(cell);
+        }
+      }
     }
     document.querySelector('#create').addEventListener('click', async () => {
       status.textContent = '正在创建房间…';

@@ -14,6 +14,7 @@ Sunjiajia is a new heuristic player. It evaluates hand structure, ranks, bombs a
 - `internal/landlord`: landlord hand types and round rules.
 - `internal/bot/sunjiajia`: independent landlord bot strategy and move generation.
 - `internal/liarbar`: hidden-card challenges, fixed-chamber roulette and elimination state.
+- `internal/gomoku`: 15×15 two-player five-in-a-row rules.
 - `internal/games`: shared mode registry and engine interface used to attach independent rule packages to rooms.
 - `internal/table`: room membership, seats, readiness and game lifecycle.
 - `internal/wire`: versioned client/server messages.
@@ -31,7 +32,7 @@ go build ./...
 
 Install Go, then run `start-table-card.bat` on Windows or `./start-table-card.ps1` in PowerShell. Open <http://localhost:8080>. Docker is not required. To choose another port, run `go run ./cmd/table-card -listen :8090`.
 
-The lobby currently supports mode selection and room creation, joining, readiness, and start checks. A room WebSocket carries chat and per-player game state updates. Liar's Bar has a basic four-seat table with hidden cards, turn controls, challenge reveal, shot counts, and elimination. Landlord mode has a three-seat card table and optional two-bot Sunjiajia training. The other modes remain listed as planned and cannot start a game session yet.
+The lobby currently supports mode selection and room creation, joining, readiness, and start checks. A room WebSocket carries chat and per-player game state updates. Liar's Bar has a basic four-seat table with hidden cards, turn controls, challenge reveal, shot counts, and elimination. Landlord mode has a three-seat card table and optional two-bot Sunjiajia training. Gomoku has a 15×15 mouse-click board. Mahjong, Chinese chess, international chess, Go, and UNO remain listed as planned and cannot start a game session yet.
 
 For an active room, `GET /api/rooms/{code}/state?playerId=...` returns that player's view. `POST /api/rooms/{code}/action` accepts `{ "playerId": "...", "action": { ... } }`; each engine owns its own action schema and validates turn order and private information.
 
