@@ -14,6 +14,7 @@ Sunjiajia is a new heuristic player. It evaluates hand structure, ranks, bombs a
 - `internal/landlord`: landlord hand types and round rules.
 - `internal/bot/sunjiajia`: independent landlord bot strategy and move generation.
 - `internal/liarbar`: hidden-card challenges, fixed-chamber roulette and elimination state.
+- `internal/games`: shared mode registry and engine interface used to attach independent rule packages to rooms.
 - `internal/table`: room membership, seats, readiness and game lifecycle.
 - `internal/wire`: versioned client/server messages.
 - `internal/client` and `internal/server`: transport-facing adapters.
@@ -30,4 +31,6 @@ go build ./...
 
 Install Go, then run `start-table-card.bat` on Windows or `./start-table-card.ps1` in PowerShell. Open <http://localhost:8080>. Docker is not required. To choose another port, run `go run ./cmd/table-card -listen :8090`.
 
-The lobby currently supports mode selection and room creation, joining, readiness, and start checks. The catalog lists the target modes; only the landlord and Liar's Bar rule packages have started, and all game screens plus the remaining modes still need implementation and room integration.
+The lobby currently supports mode selection and room creation, joining, readiness, and start checks. The game API exposes private views and action dispatch for the landlord and Liar's Bar engines. Their interactive table screens are not built yet; the other modes remain listed as planned and cannot start a game session yet.
+
+For an active room, `GET /api/rooms/{code}/state?playerId=...` returns that player's view. `POST /api/rooms/{code}/action` accepts `{ "playerId": "...", "action": { ... } }`; each engine owns its own action schema and validates turn order and private information.

@@ -31,7 +31,7 @@
     <header>
       <div class="eyebrow">Independent tabletop games</div>
       <h1>牌桌</h1>
-    <p>选择一种游戏并创建房间。模式规则正在逐项接入；目前的开始按钮只验证房间流程。</p>
+      <p>选择一种游戏并创建房间。已接入规则引擎的模式可以创建对局状态，牌桌交互界面正在逐项实现。</p>
       <div id="modes" class="modes" aria-label="游戏模式"></div>
     </header>
     <section class="panel" aria-label="创建游戏房间">
@@ -91,7 +91,7 @@
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '操作失败');
-      status.textContent = `${data.code} · ${data.players.map(player => `${player.name}${player.ready ? ' ✓' : ''}`).join(' / ')} · ${data.phase === 1 ? '房间已开始（等待游戏接入）' : '等待玩家'}`;
+      status.textContent = `${data.code} · ${data.players.map(player => `${player.name}${player.ready ? ' ✓' : ''}`).join(' / ')} · ${data.phase === 1 ? '对局已开始（交互界面接入中）' : '等待玩家'}`;
     }
     document.querySelector('#create').addEventListener('click', async () => {
       status.textContent = '正在创建房间…';

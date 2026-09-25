@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
+	"github.com/17hwliao/table-card-independent/internal/games"
 	"github.com/17hwliao/table-card-independent/internal/table"
 )
 
@@ -15,7 +17,10 @@ import (
 var assets embed.FS
 
 type Server struct {
-	rooms *table.RoomManager
+	rooms    *table.RoomManager
+	registry *games.Registry
+	mu       sync.RWMutex
+	engines  map[string]games.Engine
 }
 
 type modeInfo struct {
@@ -27,8 +32,8 @@ type modeInfo struct {
 }
 
 var modes = []modeInfo{
-	{table.LandlordMode, "斗地主", 3, 3, "牌型规则与 Sunjiajia 机器人基础"},
-	{table.LiarBarMode, "骗子酒馆", 4, 4, "对局规则引擎"},
+	{table.LandlordMode, "斗地主", 3, 3, "规则引擎已接入，交互界面开发中"},
+	{table.LiarBarMode, "骗子酒馆", 4, 4, "规则引擎已接入，交互界面开发中"},
 	{table.MahjongMode, "四川麻将", 4, 4, "开发中"},
 	{table.ChessMode, "中国象棋", 2, 2, "开发中"},
 	{table.WesternChessMode, "国际象棋", 2, 2, "开发中"},
@@ -38,7 +43,10 @@ var modes = []modeInfo{
 }
 
 func New() *Server {
-	return &Server{rooms: table.NewRoomManager()}
+	return &Server{
+		rooms: table.NewRoomManager(), registry: games.NewDefaultRegistry(),
+		engines: make(map[string]games.Engine),
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -117,6 +125,20 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, room.Snapshot())
 		return
 	}
+	if len(parts) == 4 && parts[3] == "state" && r.Method == http.MethodGet {
+		engine, ok := s.findEngine(parts[2])
+		if !ok {
+			writeError(w, http.StatusConflict, "房间尚未开始，或该模式的对局尚未接入")
+			return
+		}
+		playerID := r.URL.Query().Get("playerId")
+		if !isRoomPlayer(room.Snapshot(), playerID) {
+			writeError(w, http.StatusForbidden, "玩家不在这个房间中")
+			return
+		}
+		writeJSON(w, http.StatusOK, engine.View(playerID))
+		return
+	}
 	if len(parts) != 4 || r.Method != http.MethodPost {
 		http.NotFound(w, r)
 		return
@@ -144,15 +166,67 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "start":
+		snapshot := room.Snapshot()
+		engine, err := s.registry.New(snapshot.Mode, snapshot.Players)
+		if err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		if err := room.Start(); err != nil {
 			writeRoomError(w, err)
 			return
 		}
+		s.mu.Lock()
+		s.engines[parts[2]] = engine
+		s.mu.Unlock()
+	case "action":
+		engine, ok := s.findEngine(parts[2])
+		if !ok {
+			writeError(w, http.StatusConflict, "房间尚未开始，或该模式的对局尚未接入")
+			return
+		}
+		var request struct {
+			PlayerID string          `json:"playerId"`
+			Action   json.RawMessage `json:"action"`
+		}
+		if !readJSON(w, r, &request) {
+			return
+		}
+		if !isRoomPlayer(room.Snapshot(), request.PlayerID) {
+			writeError(w, http.StatusForbidden, "玩家不在这个房间中")
+			return
+		}
+		result, err := engine.Apply(request.PlayerID, request.Action)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+		return
 	default:
 		http.NotFound(w, r)
 		return
 	}
 	writeJSON(w, http.StatusOK, room.Snapshot())
+}
+
+func (s *Server) findEngine(code string) (games.Engine, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	engine, ok := s.engines[code]
+	return engine, ok
+}
+
+func isRoomPlayer(snapshot table.Snapshot, playerID string) bool {
+	if playerID == "" {
+		return false
+	}
+	for _, player := range snapshot.Players {
+		if player.ID == playerID {
+			return true
+		}
+	}
+	return false
 }
 
 func modeByID(id table.Mode) (modeInfo, bool) {
