@@ -21,6 +21,7 @@ type Server struct {
 	registry *games.Registry
 	mu       sync.RWMutex
 	engines  map[string]games.Engine
+	hub      *roomHub
 }
 
 type modeInfo struct {
@@ -33,7 +34,7 @@ type modeInfo struct {
 
 var modes = []modeInfo{
 	{table.LandlordMode, "斗地主", 3, 3, "规则引擎已接入，交互界面开发中"},
-	{table.LiarBarMode, "骗子酒馆", 4, 4, "规则引擎已接入，交互界面开发中"},
+	{table.LiarBarMode, "骗子酒馆", 4, 4, "规则引擎与基础牌桌已接入"},
 	{table.MahjongMode, "四川麻将", 4, 4, "开发中"},
 	{table.ChessMode, "中国象棋", 2, 2, "开发中"},
 	{table.WesternChessMode, "国际象棋", 2, 2, "开发中"},
@@ -45,7 +46,7 @@ var modes = []modeInfo{
 func New() *Server {
 	return &Server{
 		rooms: table.NewRoomManager(), registry: games.NewDefaultRegistry(),
-		engines: make(map[string]games.Engine),
+		engines: make(map[string]games.Engine), hub: newRoomHub(),
 	}
 }
 
@@ -55,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/modes", s.listModes)
 	mux.HandleFunc("POST /api/rooms", s.createRoom)
+	mux.HandleFunc("GET /api/rooms/{code}/ws", s.roomWebSocket)
 	mux.HandleFunc("/api/rooms/", s.roomRoute)
 	return mux
 }
@@ -153,6 +155,7 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 			writeRoomError(w, err)
 			return
 		}
+		s.broadcastRoom(room)
 	case "ready":
 		var request struct {
 			PlayerID string `json:"playerId"`
@@ -165,6 +168,7 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 			writeRoomError(w, err)
 			return
 		}
+		s.broadcastRoom(room)
 	case "start":
 		snapshot := room.Snapshot()
 		engine, err := s.registry.New(snapshot.Mode, snapshot.Players)
@@ -179,6 +183,7 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		s.engines[parts[2]] = engine
 		s.mu.Unlock()
+		s.broadcastGameState(parts[2], room, engine)
 	case "action":
 		engine, ok := s.findEngine(parts[2])
 		if !ok {
@@ -201,6 +206,7 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		s.broadcastGameState(parts[2], room, engine)
 		writeJSON(w, http.StatusOK, result)
 		return
 	default:

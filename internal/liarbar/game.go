@@ -73,14 +73,15 @@ type PendingPlay struct {
 }
 
 type Snapshot struct {
-	Round   int            `json:"round"`
-	Target  Rank           `json:"target"`
-	Turn    int            `json:"turn"`
-	Phase   Phase          `json:"phase"`
-	Players []PublicPlayer `json:"players"`
-	Pending *PendingPlay   `json:"pending,omitempty"`
-	Hand    []Card         `json:"hand,omitempty"`
-	Winner  string         `json:"winner,omitempty"`
+	Round         int              `json:"round"`
+	Target        Rank             `json:"target"`
+	Turn          int              `json:"turn"`
+	Phase         Phase            `json:"phase"`
+	Players       []PublicPlayer   `json:"players"`
+	Pending       *PendingPlay     `json:"pending,omitempty"`
+	Hand          []Card           `json:"hand,omitempty"`
+	LastChallenge *ChallengeResult `json:"lastChallenge,omitempty"`
+	Winner        string           `json:"winner,omitempty"`
 }
 
 type ChallengeResult struct {
@@ -115,14 +116,15 @@ type playerState struct {
 }
 
 type Game struct {
-	mu      sync.RWMutex
-	players [4]playerState
-	round   int
-	target  Rank
-	turn    int
-	phase   Phase
-	pending *play
-	winner  string
+	mu            sync.RWMutex
+	players       [4]playerState
+	round         int
+	target        Rank
+	turn          int
+	phase         Phase
+	pending       *play
+	lastChallenge *ChallengeResult
+	winner        string
 }
 
 func NewGame(players []Player) (*Game, error) {
@@ -166,6 +168,12 @@ func (g *Game) Snapshot(viewerID string) Snapshot {
 			CanCall: g.phase == RoundActive && g.players[g.turn].ID == viewerID,
 		}
 	}
+	if g.lastChallenge != nil {
+		challenge := *g.lastChallenge
+		challenge.Revealed = append([]Card(nil), g.lastChallenge.Revealed...)
+		challenge.Volley = append([]ShotResult(nil), g.lastChallenge.Volley...)
+		view.LastChallenge = &challenge
+	}
 	return view
 }
 
@@ -201,6 +209,7 @@ func (g *Game) Play(playerID string, cardIDs []uint8) error {
 	}
 	g.players[seat].hand = remaining
 	g.pending = &play{seat: seat, cards: selected}
+	g.lastChallenge = nil
 	g.turn = g.nextAlive(seat)
 	return nil
 }
@@ -257,8 +266,10 @@ func (g *Game) Challenge(playerID string) (ChallengeResult, error) {
 			}
 		}
 		result.Winner = g.winner
+		g.lastChallenge = &result
 		return result, nil
 	}
+	g.lastChallenge = &result
 	lead := (challenger + 1) % len(g.players)
 	for !g.players[lead].alive {
 		lead = (lead + 1) % len(g.players)
