@@ -1,38 +1,36 @@
-# Mode migration status
+# 游戏模式与当前实现
 
-This repository implements each mode inside its own rules package and attaches it through `internal/games`. A Bubble Tea terminal client sends actions over the room WebSocket; the Go server validates them and sends each player a private view.
+八种游戏均通过共享终端大厅、房间 API 与 WebSocket 接入。大厅、房间、聊天和对局操作都由终端客户端呈现；服务器保管对局状态、校验玩家操作并分发每位玩家可见的信息。
 
-## Available in the lobby
+## 模式
 
-| Mode | Current playable slice | Remaining rules work |
+| 模式 | 当前可用内容 | 已知限制 |
 | --- | --- | --- |
-| Landlord | Three-player game, hand classification, bidding/play and Sunjiajia training | More bot tuning and full match/settlement polish |
-| Liar's Bar | Four seats, hidden cards, bluff/challenge, shots and elimination | More animation and round presentation |
-| Gomoku | 15×15 keyboard cursor, move placement and win/draw checks | Optional opening rules and rematch flow |
-| Chinese chess | Keyboard cursor and server-side legal move/check rules | Repetition and draw-claim rules |
-| International chess | Keyboard cursor, legal movement, check, castling, en passant, promotion choice, mate/stalemate, repetition and fifty-move draw | Chess clock and claim-based draw controls |
-| Go | 19×19 keyboard cursor, captures, suicide prevention, simple ko, pass and Chinese-style area count with 6.5 komi | Dead-stone negotiation, configurable board/scoring rules and match review |
-| UNO | 108-card deck, color/number/actions, draw-to-playable, stacking, 7/0, +4 challenge, UNO catch, last-card penalties and 500-point rounds | Opening wild-card choice/rules, wrong-call option and configurable house rules |
-| Sichuan Mahjong | 108 suited tiles, exchange-three and missing-suit selection, missing-suit discard priority, discard claims, multi-Hu, peng, concealed/direct/added gang, rob-gang, self-draw, blood-battle continuation, dealer rotation, and basic flow settlement | Exchange-three is mandatory; configurable cap, complete fan/roots calculation, and accurate maximum-fan ready settlement remain |
+| 斗地主 | 三人叫分与出牌、牌型比较、倍数结算、20 张牌完整选择、Sunjiajia 机器人训练 | 机器人策略为启发式策略；叫分和出牌强度尚未按大量实战数据调优 |
+| 骗子酒馆 | 四人手牌隐藏、声明出牌、质疑、开枪与淘汰、机器人行动和结果公示 | 机器人仅使用自己的手牌和公开信息；行为策略仍可调整 |
+| 四川麻将 | 四人桌、换三张、定缺、碰杠胡、血战到底、离场、番型与根、杠分、流局退税/查花猪/查叫、机器人及可选房规 | 线上规则选项按项目默认规则实现；边缘番型和线下房规仍需实际牌局验收 |
+| 中国象棋 | 9×10 棋盘、合法走子、将军与将死、点击和键盘控制、机器人 | 重复局面和和棋申诉未覆盖所有地方规则 |
+| 国际象棋 | 合法走子、王车易位、吃过路兵、升变、将死、逼和、重复局面和五十回合规则、机器人 | 没有棋钟和基于申诉的和棋流程 |
+| 五子棋 | 15×15 棋盘、胜负与和棋判定、点击和键盘控制、机器人 | 采用自由规则，没有禁手或开局规则选项 |
+| 围棋 | 19 路、提子、自杀禁入、全局同形禁入、Pass、机器人和中国数子 | 终局按当前盘面计数；停着前需玩家自行处理死子，没有死子协商阶段 |
+| UNO | 108 张牌、摸牌、叠罚、+4 挑战、7/0、跳打、UNO 漏喊、积分、房规选项和机器人 | 自定义房规尚未覆盖所有线下约定组合；复杂多人牌局仍需人工验收 |
 
-## Known implementation choices
+## 房间和连接
 
-- The terminal lobby lists modes registered by the server. Mode state is validated by the server; client-side key handling is not treated as authorization.
-- A game view only includes the requesting player's private hand. Public seat counts and discards are shared.
-- UNO starts with a color or number card as its top discard; opening wild cards are returned to the draw pile. This is the simplified opening rule for now.
-- Mahjong currently uses a fixed four-human seat table. There is no automated Mahjong opponent or room rule editor yet. Its settlement is a playable subset and should not be treated as a fully verified implementation of every rule in the supplied Chengdu house rules.
-- The current table uses a simple in-memory room lifecycle. Closing a terminal client disconnects it but does not remove the player from an active room.
-- User-provided background tracks are kept under `internal/terminal/audio`. Terminal music playback and the per-mode M-key toggle still need to be connected.
+- 本地房间数据保存在内存中；玩家身份配置与战绩使用用户配置目录下的 JSON 文件。
+- 快速匹配会等待同模式玩家，15 秒后使用机器人补足座位。
+- 等待房间中离开会移除玩家；对局中主动离桌会把该座位交给机器人。
+- 真人断线后保留座位 30 秒，随后机器人接管；无人连接的房间在闲置 2 分钟后清理。
+- 终端客户端可查看房间列表、排行榜和个人战绩；游戏结束后可按 `F2` 再开一局。
+- 棋盘模式支持鼠标点击和键盘操作；卡牌与麻将根据屏幕提示进行选择和响应。
 
-## Terminal presentation
+## 音频与分发
 
-- The `cmd/table-card` executable is the interactive terminal client. The `cmd/table-card-server` executable hosts the room API and WebSocket service.
-- Game-specific controllers live under `internal/terminal/modes`; they render snapshots and translate keyboard input to server actions. The game engines remain the authority for legal moves.
-- The Windows launcher builds the server and client, starts a local server if one is not already responding, and opens the requested number of terminal clients. Docker and Redis are not required.
+- 每个模式播放自己对应的背景音乐；没有专属曲目的模式沿用骗子酒馆主曲目。
+- 按 `M` 开关音乐，切换游戏模式时会切换曲目；棋盘落子和麻将操作有合成提示音。
+- MP3 文件编译进客户端；Windows 便携包不需要另外安装 Go、Docker、Redis 或数据库。
+- `start-table-card.ps1` 支持本地启动、多开客户端和连接已有服务端；`scripts/package-windows.ps1` 生成便携 ZIP。
 
-## Next implementation order
+## 需要继续实测的项目
 
-1. Polish terminal input guidance and board/card layouts at narrow console sizes.
-2. Complete Mahjong's detailed fan, root, and maximum-fan ready settlement, then expose house-rule options.
-3. Add server-side forfeit/reconnect and rematch flows for active rooms.
-4. Add automated opponents to modes that need solo practice.
+规则代码和单元测试不能代替完整线下体验。发布前仍建议安排真实玩家分别完成各模式完整一局，重点检查界面提示、不同终端尺寸下的排版、机器人节奏、计分解释和房间中途离开后的状态。

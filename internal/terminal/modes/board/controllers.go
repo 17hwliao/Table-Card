@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/17hwliao/table-card-independent/internal/table"
 	"github.com/17hwliao/table-card-independent/internal/terminal/ui"
 )
@@ -113,7 +115,7 @@ func (c *Gomoku) View(s ui.Snapshot) string {
 	if !decode(s.Game, &g) {
 		return "正在同步五子棋棋盘……"
 	}
-	return gridView("五子棋 · 五子连珠", 15, c.x, c.y, func(x, y int) string {
+	return gridView("五子棋 · 五子连珠", 15, 15, c.x, c.y, nil, func(x, y int) string {
 		switch g.Board[y][x] {
 		case 1:
 			return "●"
@@ -125,7 +127,7 @@ func (c *Gomoku) View(s ui.Snapshot) string {
 			}
 			return "·"
 		}
-	}, turnStatus(s.PlayerID, g.TurnPlayer, g.Winner, g.Draw, g.Moves, "黑棋", "白棋"), "方向键移动 · Enter 落子 · X/Y 选择坐标", "")
+	}, turnStatus(s.PlayerID, g.TurnPlayer, g.Winner, g.Draw, g.Moves, g.Turn, "黑棋", "白棋"), "鼠标点击落子 · 方向键移动 · Enter 落子", "")
 }
 func (c *ChineseChess) View(s ui.Snapshot) string {
 	var g chineseState
@@ -133,14 +135,14 @@ func (c *ChineseChess) View(s ui.Snapshot) string {
 		return "正在同步中国象棋棋盘……"
 	}
 	turn := sideName(g.Turn, "红方", "黑方")
-	status := turnStatus(s.PlayerID, g.TurnPlayer, g.Winner, g.Draw, g.Moves, "红方", "黑方")
+	status := turnStatus(s.PlayerID, g.TurnPlayer, g.Winner, g.Draw, g.Moves, g.Turn, "红方", "黑方")
 	if g.InCheck && g.Winner == "" {
 		status += " · 将军"
 	}
 	if c.from != nil {
 		status += fmt.Sprintf(" · 已选 %s", chinesePiece(g.Board[c.from[1]][c.from[0]].Kind, g.Board[c.from[1]][c.from[0]].Side))
 	}
-	return gridView("中国象棋 · 楚河汉界", 9, c.x, c.y, func(x, y int) string {
+	return gridView("中国象棋 · 楚河汉界", 9, 10, c.x, c.y, c.from, func(x, y int) string {
 		p := g.Board[y][x]
 		if p.Kind == 0 {
 			if y == 4 && x == 4 {
@@ -148,15 +150,15 @@ func (c *ChineseChess) View(s ui.Snapshot) string {
 			}
 			return "·"
 		}
-		return chinesePiece(p.Kind, p.Side)
-	}, status, fmt.Sprintf("方向键移动 · Enter 选子/走棋 · %s回合", turn), "")
+		return pieceColor(chinesePiece(p.Kind, p.Side), p.Side, true)
+	}, status, fmt.Sprintf("鼠标点击选子/走棋 · Enter 确认 · Esc 取消 · %s回合", turn), "")
 }
 func (c *InternationalChess) View(s ui.Snapshot) string {
 	var g chessState
 	if !decode(s.Game, &g) {
 		return "正在同步国际象棋棋盘……"
 	}
-	status := turnStatus(s.PlayerID, g.TurnPlayer, g.Winner, g.Draw, g.Moves, "白方", "黑方")
+	status := turnStatus(s.PlayerID, g.TurnPlayer, g.Winner, g.Draw, g.Moves, g.Turn, "白方", "黑方")
 	if g.InCheck && g.Winner == "" {
 		status += " · 将军"
 	}
@@ -166,27 +168,27 @@ func (c *InternationalChess) View(s ui.Snapshot) string {
 	if c.from != nil {
 		status += fmt.Sprintf(" · 已选 %c%d", rune('a'+c.from[0]), 8-c.from[1])
 	}
-	return gridView("国际象棋 · Chess", 8, c.x, c.y, func(x, y int) string {
+	return gridView("国际象棋 · Chess", 8, 8, c.x, c.y, c.from, func(x, y int) string {
 		p := g.Board[y][x]
 		if p.Kind == 0 {
 			return "·"
 		}
-		return westernPiece(p.Kind, p.Side)
-	}, status, "方向键移动 · Enter 选子/走棋 · 升变: Q/R/B/N", "")
+		return pieceColor(westernPiece(p.Kind, p.Side), p.Side, false)
+	}, status, "鼠标点击选子/走棋 · Enter 确认 · Esc 取消 · 升变: Q/R/B/N", "")
 }
 func (c *Go) View(s ui.Snapshot) string {
 	var g goState
 	if !decode(s.Game, &g) {
 		return "正在同步围棋棋盘……"
 	}
-	status := turnStatus(s.PlayerID, g.TurnPlayer, g.Winner, g.Draw, g.Moves, "黑棋", "白棋")
+	status := turnStatus(s.PlayerID, g.TurnPlayer, g.Winner, g.Draw, g.Moves, g.Turn, "黑棋", "白棋")
 	if g.Finished {
 		status += fmt.Sprintf(" · 数子 黑 %.1f : 白 %.1f", g.BlackScore, g.WhiteScore)
 	}
 	if g.LastMove != nil && g.LastMove.Pass {
 		status += " · 上一手 Pass"
 	}
-	return gridView("围棋 · 19 路", 19, c.x, c.y, func(x, y int) string {
+	return gridView("围棋 · 19 路", 19, 19, c.x, c.y, nil, func(x, y int) string {
 		switch g.Board[y][x] {
 		case 1:
 			return "●"
@@ -198,7 +200,7 @@ func (c *Go) View(s ui.Snapshot) string {
 			}
 			return "+"
 		}
-	}, status, "方向键移动 · Enter 落子 · P 停一手 Pass", "")
+	}, status, "鼠标点击落子 · Enter 确认 · P 停一手", "")
 }
 
 func (c *Gomoku) Key(s ui.Snapshot, key string) ui.Result {
@@ -209,8 +211,11 @@ func (c *Gomoku) Key(s ui.Snapshot, key string) ui.Result {
 	if done(g.Winner, g.Draw) {
 		return ui.Result{Handled: true, Status: "本局已结束"}
 	}
-	moveCursor(&c.x, &c.y, 15, key)
+	moveCursor(&c.x, &c.y, 15, 15, key)
 	if key == "enter" || key == " " {
+		if g.TurnPlayer != s.PlayerID {
+			return ui.Result{Handled: true, Status: "请等待你的回合"}
+		}
 		return ui.Result{Handled: true, Action: ui.Action(map[string]any{"type": "place", "x": c.x, "y": c.y})}
 	}
 	return handledMove(key)
@@ -223,13 +228,20 @@ func (c *ChineseChess) Key(s ui.Snapshot, key string) ui.Result {
 	if done(g.Winner, g.Draw) {
 		return ui.Result{Handled: true, Status: "本局已结束"}
 	}
-	moveCursor(&c.x, &c.y, 9, key)
+	moveCursor(&c.x, &c.y, 9, 10, key)
 	if key == "esc" || key == "escape" {
 		c.from = nil
 		return ui.Result{Handled: true, Status: "取消选子"}
 	}
 	if key != "enter" && key != " " {
 		return handledMove(key)
+	}
+	if g.TurnPlayer != s.PlayerID {
+		return ui.Result{Handled: true, Status: "请等待你的回合"}
+	}
+	if c.from != nil && g.Board[c.y][c.x].Side == g.Turn {
+		c.from = &[2]int{c.x, c.y}
+		return ui.Result{Handled: true, Status: "已切换选中的棋子"}
 	}
 	if c.from == nil {
 		if g.Board[c.y][c.x].Side != g.Turn {
@@ -266,13 +278,20 @@ func (c *InternationalChess) Key(s ui.Snapshot, key string) ui.Result {
 		c.promotion = 2
 		return ui.Result{Handled: true, Status: "兵升变：马"}
 	}
-	moveCursor(&c.x, &c.y, 8, key)
+	moveCursor(&c.x, &c.y, 8, 8, key)
 	if key == "esc" || key == "escape" {
 		c.from = nil
 		return ui.Result{Handled: true, Status: "取消选子"}
 	}
 	if key != "enter" && key != " " {
 		return handledMove(key)
+	}
+	if g.TurnPlayer != s.PlayerID {
+		return ui.Result{Handled: true, Status: "请等待你的回合"}
+	}
+	if c.from != nil && g.Board[c.y][c.x].Side == g.Turn {
+		c.from = &[2]int{c.x, c.y}
+		return ui.Result{Handled: true, Status: "已切换选中的棋子"}
 	}
 	if c.from == nil {
 		if g.Board[c.y][c.x].Side != g.Turn {
@@ -293,11 +312,14 @@ func (c *Go) Key(s ui.Snapshot, key string) ui.Result {
 	if g.Finished {
 		return ui.Result{Handled: true, Status: "本局已结束"}
 	}
-	moveCursor(&c.x, &c.y, 19, key)
+	moveCursor(&c.x, &c.y, 19, 19, key)
 	if strings.EqualFold(key, "p") {
 		return ui.Result{Handled: true, Action: ui.Action(map[string]any{"type": "pass"})}
 	}
 	if key == "enter" || key == " " {
+		if g.TurnPlayer != s.PlayerID {
+			return ui.Result{Handled: true, Status: "请等待你的回合"}
+		}
 		return ui.Result{Handled: true, Action: ui.Action(map[string]any{"type": "play", "x": c.x, "y": c.y})}
 	}
 	return handledMove(key)
@@ -312,7 +334,7 @@ func handledMove(key string) ui.Result {
 	}
 	return ui.Result{}
 }
-func moveCursor(x, y *int, size int, key string) {
+func moveCursor(x, y *int, width, height int, key string) {
 	switch strings.ToLower(key) {
 	case "up", "k", "w", "↑":
 		*y--
@@ -329,14 +351,14 @@ func moveCursor(x, y *int, size int, key string) {
 	if *y < 0 {
 		*y = 0
 	}
-	if *x >= size {
-		*x = size - 1
+	if *x >= width {
+		*x = width - 1
 	}
-	if *y >= size {
-		*y = size - 1
+	if *y >= height {
+		*y = height - 1
 	}
 }
-func turnStatus(player, turn, winner string, draw bool, moves int, first, second string) string {
+func turnStatus(player, turn, winner string, draw bool, moves int, color uint8, first, second string) string {
 	if winner != "" {
 		if winner == player {
 			return fmt.Sprintf("你获胜 · 共 %d 手", moves)
@@ -347,10 +369,13 @@ func turnStatus(player, turn, winner string, draw bool, moves int, first, second
 		return fmt.Sprintf("和棋 · 共 %d 手", moves)
 	}
 	side := second
-	if turn != "" && moves%2 == 0 {
+	if color == 1 {
 		side = first
 	}
-	return fmt.Sprintf("第 %d 手 · %s走棋", moves+1, side)
+	if turn == player {
+		return fmt.Sprintf("第 %d 手 · %s走棋 · 轮到你", moves+1, side)
+	}
+	return fmt.Sprintf("第 %d 手 · %s走棋 · 等待对手", moves+1, side)
 }
 func sideName(side uint8, a, b string) string {
 	if side == 1 {
@@ -358,67 +383,108 @@ func sideName(side uint8, a, b string) string {
 	}
 	return b
 }
-func gridView(title string, size, cx, cy int, cell func(int, int) string, status, help, extra string) string {
-	cellw := 2
-	if size == 8 {
-		cellw = 4
-	}
-	if size == 9 {
-		cellw = 4
-	}
+
+// Board cells begin at column 4, row 2 in View. Mouse uses this same geometry.
+func gridView(title string, cols, rows, cx, cy int, selected *[2]int, cell func(int, int) string, status, help, extra string) string {
+	cw := cellWidth(cols)
 	var b strings.Builder
-	b.WriteString("╭─ " + title + " " + strings.Repeat("─", maxInt(2, size*cellw-len([]rune(title)))) + "╮\n")
-	if size == 8 {
-		b.WriteString("    a   b   c   d   e   f   g   h\n")
-	}
-	for y := 0; y < size; y++ {
-		if size == 8 {
-			fmt.Fprintf(&b, " %d │", 8-y)
-		} else if size == 9 {
-			fmt.Fprintf(&b, "%2d │", size-y)
-		} else if size == 19 {
-			fmt.Fprintf(&b, "%2d │", size-y)
-		} else {
-			b.WriteString("   │")
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F5CF82")).Render("  "+title) + "\n")
+	b.WriteString("    ")
+	for x := 0; x < cols; x++ {
+		label := fmt.Sprint(x + 1)
+		if cols == 8 {
+			label = string(rune('a' + x))
 		}
-		for x := 0; x < size; x++ {
-			v := cell(x, y)
-			if x == cx && y == cy {
-				v = "[" + v + "]"
-			} else if size == 15 || size == 19 {
-				v = " " + v
+		b.WriteString(center(label, cw))
+	}
+	b.WriteByte('\n')
+	for y := 0; y < rows; y++ {
+		fmt.Fprintf(&b, "%2d │", rows-y)
+		for x := 0; x < cols; x++ {
+			bg := "#443A2D"
+			if cols == 8 && (x+y)%2 == 0 {
+				bg = "#6A6352"
 			}
-			b.WriteString(center(v, cellw))
+			style := lipgloss.NewStyle().Background(lipgloss.Color(bg))
+			if selected != nil && selected[0] == x && selected[1] == y {
+				style = style.Background(lipgloss.Color("#246651")).Bold(true)
+			}
+			if x == cx && y == cy {
+				style = style.Background(lipgloss.Color("#52648A")).Bold(true)
+			}
+			b.WriteString(style.Render(center(cell(x, y), cw)))
 		}
 		b.WriteString("│\n")
 	}
-	b.WriteString("   ╰" + strings.Repeat("─", size*cellw) + "╯\n")
-	if size != 8 {
-		b.WriteString("     ")
-		for x := 0; x < size; x++ {
-			fmt.Fprintf(&b, "%*d", cellw, x+1)
-		}
-		b.WriteByte('\n')
-	}
-	b.WriteString("\n" + status + "\n" + help)
+	b.WriteString("   ╰" + strings.Repeat("─", cols*cw) + "╯\n")
+	b.WriteString(status + "\n" + help)
 	if extra != "" {
 		b.WriteString("\n" + extra)
 	}
 	return b.String()
 }
+func cellWidth(cols int) int {
+	if cols == 8 || cols == 9 {
+		return 4
+	}
+	return 3
+}
 func center(s string, w int) string {
-	n := len([]rune(s))
+	n := lipgloss.Width(s)
 	if n >= w {
 		return s
 	}
 	left := (w - n) / 2
 	return strings.Repeat(" ", left) + s + strings.Repeat(" ", w-n-left)
 }
-func maxInt(a, b int) int {
-	if a > b {
-		return a
+func pieceColor(s string, side uint8, chinese bool) string {
+	color := "#E9EDF5"
+	if side == 2 {
+		color = "#A6C9E8"
+	} else if chinese {
+		color = "#FF8D85"
 	}
-	return b
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true).Render(s)
+}
+func hitCell(x, y, cols, rows int) (int, int, bool) {
+	x -= 4
+	y -= 2
+	if x < 0 || y < 0 || x >= cols*cellWidth(cols) || y >= rows {
+		return 0, 0, false
+	}
+	return x / cellWidth(cols), y, true
+}
+func (c *Gomoku) Mouse(s ui.Snapshot, x, y int) ui.Result {
+	bx, by, ok := hitCell(x, y, 15, 15)
+	if !ok {
+		return ui.Result{}
+	}
+	c.x, c.y = bx, by
+	return c.Key(s, "enter")
+}
+func (c *ChineseChess) Mouse(s ui.Snapshot, x, y int) ui.Result {
+	bx, by, ok := hitCell(x, y, 9, 10)
+	if !ok {
+		return ui.Result{}
+	}
+	c.x, c.y = bx, by
+	return c.Key(s, "enter")
+}
+func (c *InternationalChess) Mouse(s ui.Snapshot, x, y int) ui.Result {
+	bx, by, ok := hitCell(x, y, 8, 8)
+	if !ok {
+		return ui.Result{}
+	}
+	c.x, c.y = bx, by
+	return c.Key(s, "enter")
+}
+func (c *Go) Mouse(s ui.Snapshot, x, y int) ui.Result {
+	bx, by, ok := hitCell(x, y, 19, 19)
+	if !ok {
+		return ui.Result{}
+	}
+	c.x, c.y = bx, by
+	return c.Key(s, "enter")
 }
 func chinesePiece(kind, side uint8) string {
 	red := []string{"", "帥", "仕", "相", "馬", "車", "炮", "兵"}

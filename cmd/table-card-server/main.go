@@ -15,10 +15,12 @@ import (
 func main() {
 	address := flag.String("listen", ":1781", "牌桌服务端监听地址")
 	flag.Parse()
+	service := server.New()
+	defer service.Close()
 
 	httpServer := &http.Server{
 		Addr:              *address,
-		Handler:           server.New().Handler(),
+		Handler:           service.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	stopped := make(chan os.Signal, 1)
@@ -28,7 +30,7 @@ func main() {
 		_ = httpServer.Close()
 	}()
 
-	log.Printf("牌桌终端服务已启动：http://localhost%s", *address)
+	log.Printf("牌桌终端服务已启动，监听 %s", *address)
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

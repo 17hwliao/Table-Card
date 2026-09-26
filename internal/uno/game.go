@@ -45,7 +45,34 @@ type PublicPlayer struct {
 	Bot     bool   `json:"bot,omitempty"`
 	SaidUNO bool   `json:"saidUNO"`
 }
+
+// Options are fixed for the room; recycling always preserves all 108 cards.
+type Options struct {
+	Challenge       bool `json:"challenge"`
+	Blitz           bool `json:"blitz"`
+	SevenZero       bool `json:"sevenZero"`
+	OpeningEffects  bool `json:"openingEffects"`
+	WrongUNOPenalty bool `json:"wrongUNOPenalty"`
+	DoublePlay      bool `json:"doublePlay"`
+	FirstSeat       int  `json:"firstSeat"`
+}
+
+func DefaultOptions() Options {
+	return Options{Challenge: true, Blitz: true, SevenZero: true, OpeningEffects: true}
+}
+
+type ChallengeResult struct {
+	Target   int    `json:"target"`
+	Success  bool   `json:"success"`
+	Revealed []Card `json:"revealed"`
+}
+
 type Snapshot struct {
+	LastChallenge *ChallengeResult `json:"lastChallenge,omitempty"`
+
+	OpeningColor bool    `json:"openingColor"`
+	Options      Options `json:"options"`
+
 	Players          []PublicPlayer `json:"players"`
 	Hand             []Card         `json:"hand"`
 	Turn             int            `json:"turn"`
@@ -66,29 +93,37 @@ type Snapshot struct {
 	DrewPlayable     bool           `json:"drewPlayable"`
 }
 type Game struct {
-	mu                   sync.RWMutex
-	players              []table.Player
-	hands                [][]Card
-	scores               []int
-	draw                 []Card
-	discard              []Card
-	turn                 int
-	direction            int
-	color                Color
-	penalty              int
-	penaltyKind          Kind
-	winner, seriesWinner string
-	finished             bool
-	round                int
-	pendingChallenge     bool
-	challengeTarget      int
-	challengeColor       Color
-	missedUNO            int
-	saidUNO              []bool
-	drewPlayable         bool
+	lastChallenge            *ChallengeResult
+	openingColor             bool
+	options                  Options
+	openingSkip              int
+	challengePreviousPenalty int
+	challengePreviousKind    Kind
+	challengeHadColor        bool
+	mu                       sync.RWMutex
+	players                  []table.Player
+	hands                    [][]Card
+	scores                   []int
+	draw                     []Card
+	discard                  []Card
+	turn                     int
+	direction                int
+	color                    Color
+	penalty                  int
+	penaltyKind              Kind
+	winner, seriesWinner     string
+	finished                 bool
+	round                    int
+	pendingChallenge         bool
+	challengeTarget          int
+	challengeColor           Color
+	missedUNO                int
+	saidUNO                  []bool
+	drewPlayable             bool
 }
 
-func New(players []table.Player) (*Game, error) {
+func New(players []table.Player) (*Game, error) { return NewWithOptions(players, DefaultOptions()) }
+func NewWithOptions(players []table.Player, options Options) (*Game, error) {
 	if len(players) < 2 || len(players) > 4 {
 		return nil, errors.New("UNO 需要 2 到 4 名玩家")
 	}
@@ -99,7 +134,10 @@ func New(players []table.Player) (*Game, error) {
 		}
 		seen[p.ID] = true
 	}
-	g := &Game{players: append([]table.Player(nil), players...), scores: make([]int, len(players)), round: 1}
+	if options.FirstSeat < 0 || options.FirstSeat >= len(players) {
+		return nil, errors.New("无效的先手座位")
+	}
+	g := &Game{options: options, players: append([]table.Player(nil), players...), scores: make([]int, len(players)), round: 1}
 	g.startRound()
 	return g, nil
 }
@@ -110,12 +148,14 @@ func (g *Game) startRound() {
 	g.saidUNO = make([]bool, len(g.players))
 	g.draw = deck
 	g.discard = nil
-	g.turn = 0
+	g.turn = g.options.FirstSeat
 	g.direction = 1
 	g.penalty = 0
 	g.penaltyKind = Number
 	g.pendingChallenge = false
+	g.lastChallenge = nil
 	g.missedUNO = -1
+	g.openingSkip = -1
 	g.finished = false
 	g.drewPlayable = false
 	for i := 0; i < 7; i++ {
@@ -124,24 +164,29 @@ func (g *Game) startRound() {
 		}
 	}
 	first := g.takeCard()
-	for first.Kind == Wild || first.Kind == WildDrawFour {
-		g.draw = append(g.draw, first)
-		first = g.takeCard()
-	}
+
 	g.discard = append(g.discard, first)
 	g.color = first.Color
-	switch first.Kind {
-	case DrawTwo:
-		g.penalty = 2
-		g.penaltyKind = DrawTwo
-		g.turn = g.next(0)
-	case Skip:
-		g.turn = g.next(0)
-	case Reverse:
-		g.direction = -1
-		g.turn = g.next(0)
-	case Number:
+	g.openingColor = first.Kind == Wild || first.Kind == WildDrawFour
+	if g.options.OpeningEffects {
+		switch first.Kind {
+		case DrawTwo:
+			// Room rule: the first player retains their turn; their next seat draws and skips once.
+			target := g.next(g.turn)
+			for i := 0; i < 2; i++ {
+				g.hands[target] = append(g.hands[target], g.takeCard())
+			}
+			g.openingSkip = target
+		case Skip:
+			g.turn = g.next(g.turn)
+		case Reverse:
+			g.direction = -1
+			if len(g.players) > 2 {
+				g.turn = g.next(g.turn)
+			}
+		}
 	}
+
 }
 func makeDeck() []Card {
 	deck := make([]Card, 0, 108)
@@ -194,7 +239,12 @@ func (g *Game) View(viewerID string) Snapshot {
 	return g.snapshotLocked(viewerID)
 }
 func (g *Game) snapshotLocked(viewer string) Snapshot {
-	s := Snapshot{Turn: g.turn, Direction: g.direction, Color: g.color, DrawPenalty: g.penalty, PenaltyKind: g.penaltyKind, Winner: g.winner, SeriesWinner: g.seriesWinner, Round: g.round, Finished: g.finished, PendingChallenge: g.pendingChallenge, ChallengeTarget: g.challengeTarget, MissedUNO: g.missedUNO, CanCatchUNO: g.missedUNO >= 0 && g.turn == g.next(g.missedUNO), DrewPlayable: g.drewPlayable}
+	s := Snapshot{OpeningColor: g.openingColor, Options: g.options, Turn: g.turn, Direction: g.direction, Color: g.color, DrawPenalty: g.penalty, PenaltyKind: g.penaltyKind, Winner: g.winner, SeriesWinner: g.seriesWinner, Round: g.round, Finished: g.finished, PendingChallenge: g.pendingChallenge, ChallengeTarget: g.challengeTarget, MissedUNO: g.missedUNO, CanCatchUNO: g.missedUNO >= 0 && len(g.hands[g.missedUNO]) == 1 && g.players[g.missedUNO].ID != viewer, DrewPlayable: g.drewPlayable}
+	if g.lastChallenge != nil {
+		copy := *g.lastChallenge
+		copy.Revealed = append([]Card(nil), copy.Revealed...)
+		s.LastChallenge = &copy
+	}
 	if len(g.discard) > 0 {
 		s.Discard = g.discard[len(g.discard)-1]
 	}
@@ -212,6 +262,7 @@ func (g *Game) snapshotLocked(viewer string) Snapshot {
 func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error) {
 	var a struct {
 		Type   string `json:"type"`
+		Pair   bool   `json:"pair"`
 		CardID int    `json:"cardId"`
 		Color  Color  `json:"color"`
 		UNO    bool   `json:"uno"`
@@ -244,8 +295,16 @@ func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error)
 		g.startRound()
 		return g.snapshotLocked(playerID), nil
 	}
+	if g.openingColor {
+		if seat != g.turn || a.Type != "choose_color" || a.Color < Red || a.Color > Green {
+			return Snapshot{}, errors.New("请先由先手玩家选择开局颜色")
+		}
+		g.color = a.Color
+		g.openingColor = false
+		return g.snapshotLocked(playerID), nil
+	}
 	if a.Type == "catch_uno" {
-		if g.missedUNO < 0 || seat != g.turn || seat == g.missedUNO || len(g.hands[g.missedUNO]) != 1 {
+		if g.missedUNO < 0 || seat == g.missedUNO || len(g.hands[g.missedUNO]) != 1 {
 			return Snapshot{}, errors.New("当前没有可抓漏喊 UNO 的玩家")
 		}
 		for i := 0; i < 2; i++ {
@@ -258,25 +317,19 @@ func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error)
 		g.missedUNO = -1
 		return g.snapshotLocked(playerID), nil
 	}
-	if g.turn != seat {
+	blitz := g.turn != seat && a.Type == "play" && g.options.Blitz
+	if g.turn != seat && !blitz {
 		return Snapshot{}, errors.New("当前不是该玩家的回合")
-	}
-	if g.missedUNO >= 0 {
-		g.missedUNO = -1
 	}
 	if a.Type == "challenge" {
 		if !g.pendingChallenge || seat != g.turn {
 			return Snapshot{}, errors.New("当前没有可挑战的万能 +4")
 		}
 		target := g.challengeTarget
-		hasColor := false
-		for _, c := range g.hands[target] {
-			if c.Color == g.challengeColor {
-				hasColor = true
-				break
-			}
-		}
+		hasColor := g.challengeHadColor
+		g.lastChallenge = &ChallengeResult{Target: target, Success: hasColor, Revealed: append([]Card(nil), g.hands[target]...)}
 		g.pendingChallenge = false
+		g.missedUNO = -1
 		if hasColor {
 			for i := 0; i < 4; i++ {
 				c := g.takeCard()
@@ -284,9 +337,10 @@ func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error)
 					g.hands[target] = append(g.hands[target], c)
 				}
 			}
+			g.saidUNO[target] = false
 			g.turn = seat
-			g.penalty = 0
-			g.penaltyKind = Number
+			g.penalty = g.challengePreviousPenalty
+			g.penaltyKind = g.challengePreviousKind
 			g.color = g.challengeColor
 		} else {
 			for i := 0; i < g.penalty+2; i++ {
@@ -296,12 +350,15 @@ func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error)
 				}
 			}
 			g.penalty = 0
-			g.turn = g.next(seat)
+			g.penaltyKind = Number
+			g.saidUNO[seat] = false
+			g.turn = g.nextTurn(seat)
 		}
 		return g.snapshotLocked(playerID), nil
 	}
 	if a.Type == "draw" {
 		if g.penalty > 0 {
+			g.missedUNO = -1
 			for i := 0; i < g.penalty; i++ {
 				c := g.takeCard()
 				if c.ID >= 0 {
@@ -312,12 +369,14 @@ func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error)
 			g.penaltyKind = Number
 			g.pendingChallenge = false
 			g.drewPlayable = false
-			g.turn = g.next(seat)
+			g.turn = g.nextTurn(seat)
 			return g.snapshotLocked(playerID), nil
 		}
 		if g.drewPlayable {
 			return Snapshot{}, errors.New("你已经摸到可出的牌，可以出牌或结束本回合")
 		}
+		g.missedUNO = -1
+		g.saidUNO[seat] = false
 		g.drewPlayable = false
 		for attempts := 0; attempts < 108; attempts++ {
 			c := g.takeCard()
@@ -339,8 +398,10 @@ func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error)
 		if !g.drewPlayable {
 			return Snapshot{}, errors.New("请先摸牌")
 		}
+		g.missedUNO = -1
+		g.saidUNO[seat] = false
 		g.drewPlayable = false
-		g.turn = g.next(seat)
+		g.turn = g.nextTurn(seat)
 		return g.snapshotLocked(playerID), nil
 	}
 	if a.Type != "play" {
@@ -357,7 +418,33 @@ func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error)
 		return Snapshot{}, errors.New("手牌中找不到该牌")
 	}
 	card := g.hands[seat][idx]
-	if card.Kind == Number && card.Number == 7 && len(g.hands[seat]) > 1 && (a.Target < 0 || a.Target >= len(g.players) || a.Target == seat) {
+
+	if blitz {
+		top := g.discard[len(g.discard)-1]
+		if card.Color == NoColor || card.Color != top.Color || card.Kind != top.Kind || (card.Kind == Number && card.Number != top.Number) {
+			return Snapshot{}, errors.New("跳打需要与台面完全相同的彩色牌")
+		}
+	}
+	var pairID = -1
+	if a.Pair {
+		if !g.options.DoublePlay || card.Kind != Number {
+			return Snapshot{}, errors.New("本桌未开启同色数字双牌同出")
+		}
+		for _, other := range g.hands[seat] {
+			if other.ID != card.ID && other.Color == card.Color && other.Kind == Number && other.Number == card.Number {
+				pairID = other.ID
+				break
+			}
+		}
+		if pairID < 0 {
+			return Snapshot{}, errors.New("没有同色同数字的第二张牌")
+		}
+	}
+	removing := 1
+	if pairID >= 0 {
+		removing = 2
+	}
+	if card.Kind == Number && card.Number == 7 && g.options.SevenZero && len(g.hands[seat]) > removing && (a.Target < 0 || a.Target >= len(g.players) || a.Target == seat) {
 		return Snapshot{}, errors.New("数字 7 需要选择另一名玩家交换手牌")
 	}
 	if !g.canPlay(card) {
@@ -369,26 +456,54 @@ func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error)
 	if (card.Kind == Wild || card.Kind == WildDrawFour) && (a.Color < Red || a.Color > Green) {
 		return Snapshot{}, errors.New("万能牌需要选择一种有效颜色")
 	}
+	g.lastChallenge = nil
 	oldColor := g.color
+	previousPenalty, previousKind := g.penalty, g.penaltyKind
+	hadColor := false
+	for _, held := range g.hands[seat] {
+		if held.Color == oldColor {
+			hadColor = true
+		}
+	}
 	g.drewPlayable = false
 	g.pendingChallenge = false
 	g.hands[seat] = append(g.hands[seat][:idx], g.hands[seat][idx+1:]...)
 	g.discard = append(g.discard, card)
+	if pairID >= 0 {
+		for i, other := range g.hands[seat] {
+			if other.ID == pairID {
+				g.hands[seat] = append(g.hands[seat][:i], g.hands[seat][i+1:]...)
+				g.discard = append(g.discard, other)
+				break
+			}
+		}
+	}
 	if card.Kind == Wild || card.Kind == WildDrawFour {
 		g.color = a.Color
 	} else {
 		g.color = card.Color
 	}
-	if card.Kind == Number && card.Number == 7 && len(g.hands[seat]) > 0 {
+	if card.Kind == Number && card.Number == 7 && g.options.SevenZero && len(g.hands[seat]) > 0 {
 		g.hands[seat], g.hands[a.Target] = g.hands[a.Target], g.hands[seat]
 	}
-	if card.Kind == Number && card.Number == 0 && len(g.hands[seat]) > 0 {
+	if card.Kind == Number && card.Number == 0 && g.options.SevenZero && len(g.hands[seat]) > 0 {
 		oldHands := make([][]Card, len(g.hands))
 		for i := range g.hands {
 			oldHands[i] = g.hands[i]
 		}
 		for i := range g.hands {
-			g.hands[i] = oldHands[g.next(i)]
+			g.hands[g.next(i)] = oldHands[i]
+		}
+	}
+	for i := range g.saidUNO {
+		g.saidUNO[i] = g.saidUNO[i] && len(g.hands[i]) == 1
+	}
+	if a.UNO && g.options.WrongUNOPenalty && len(g.hands[seat]) > 1 {
+		for i := 0; i < 2; i++ {
+			card := g.takeCard()
+			if card.ID >= 0 {
+				g.hands[seat] = append(g.hands[seat], card)
+			}
 		}
 	}
 	g.saidUNO[seat] = len(g.hands[seat]) == 1 && a.UNO
@@ -402,6 +517,7 @@ func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error)
 			if card.Kind == WildDrawFour {
 				count = 4
 			}
+			count += g.penalty
 			target := g.next(seat)
 			for i := 0; i < count; i++ {
 				c := g.takeCard()
@@ -410,36 +526,52 @@ func (g *Game) Apply(playerID string, payload json.RawMessage) (Snapshot, error)
 				}
 			}
 		}
+		g.penalty = 0
+		g.pendingChallenge = false
 		g.finishRound(seat)
 		return g.snapshotLocked(playerID), nil
 	}
 	switch card.Kind {
 	case Number:
-		g.turn = g.next(seat)
+		g.turn = g.nextTurn(seat)
 	case Skip:
-		g.turn = g.next(g.next(seat))
+		g.turn = g.nextTurn(g.next(seat))
 	case Reverse:
 		if len(g.players) == 2 {
-			g.turn = g.next(g.next(seat))
+			g.turn = g.nextTurn(g.next(seat))
 		} else {
 			g.direction = -g.direction
-			g.turn = g.next(seat)
+			g.turn = g.nextTurn(seat)
 		}
 	case DrawTwo:
 		g.penalty += 2
 		g.penaltyKind = DrawTwo
-		g.turn = g.next(seat)
+		g.turn = g.nextTurn(seat)
 	case Wild:
-		g.turn = g.next(seat)
+		g.turn = g.nextTurn(seat)
 	case WildDrawFour:
 		g.penalty += 4
 		g.penaltyKind = WildDrawFour
 		g.challengeTarget = seat
 		g.challengeColor = oldColor
-		g.pendingChallenge = true
-		g.turn = g.next(seat)
+		g.pendingChallenge = g.options.Challenge
+		g.challengePreviousPenalty = previousPenalty
+		g.challengePreviousKind = previousKind
+		g.challengeHadColor = hadColor
+		g.turn = g.nextTurn(seat)
 	}
+
 	return g.snapshotLocked(playerID), nil
+}
+func (g *Game) nextTurn(from int) int {
+	next := g.next(from)
+	if g.openingSkip >= 0 && (from == g.openingSkip || next == g.openingSkip) {
+		if next == g.openingSkip {
+			next = g.next(next)
+		}
+		g.openingSkip = -1
+	}
+	return next
 }
 func (g *Game) playable(c Card) bool {
 	return c.Kind == Wild || c.Kind == WildDrawFour || c.Color == g.color || len(g.discard) > 0 && ((c.Kind == Number && g.discard[len(g.discard)-1].Kind == Number && c.Number == g.discard[len(g.discard)-1].Number) || c.Kind != Number && c.Kind == g.discard[len(g.discard)-1].Kind)
@@ -490,4 +622,81 @@ func (e *Engine) Mode() table.Mode   { return table.UNOMode }
 func (e *Engine) View(id string) any { return e.game.View(id) }
 func (e *Engine) Apply(id string, payload json.RawMessage) (any, error) {
 	return e.game.Apply(id, payload)
+}
+
+func NewEngineWithOptions(players []table.Player, options Options) (*Engine, error) {
+	g, err := NewWithOptions(players, options)
+	if err != nil {
+		return nil, err
+	}
+	return &Engine{game: g}, nil
+}
+
+// BotAction only reads public information and its own hand.
+func (e *Engine) BotAction(playerID string) json.RawMessage {
+	g := e.game
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	seat := -1
+	for i, p := range g.players {
+		if p.ID == playerID {
+			seat = i
+			break
+		}
+	}
+	if seat < 0 || g.finished || g.turn != seat {
+		return nil
+	}
+	action := map[string]any{"type": "draw"}
+	if g.openingColor {
+		counts := [5]int{}
+		for _, card := range g.hands[seat] {
+			counts[card.Color]++
+		}
+		color := Red
+		for c := Yellow; c <= Green; c++ {
+			if counts[c] > counts[color] {
+				color = c
+			}
+		}
+		data, _ := json.Marshal(map[string]any{"type": "choose_color", "color": color})
+		return data
+	}
+	if g.missedUNO >= 0 && g.missedUNO != seat && len(g.hands[g.missedUNO]) == 1 {
+		action["type"] = "catch_uno"
+	} else {
+		best := -1
+		for i, c := range g.hands[seat] {
+			if g.canPlay(c) && (best < 0 || (g.hands[seat][best].Kind >= Wild && c.Kind < Wild)) {
+				best = i
+			}
+		}
+		if best >= 0 {
+			card := g.hands[seat][best]
+			counts := [5]int{}
+			for _, c := range g.hands[seat] {
+				counts[c.Color]++
+			}
+			color := Red
+			for c := Yellow; c <= Green; c++ {
+				if counts[c] > counts[color] {
+					color = c
+				}
+			}
+			target := g.next(seat)
+			for i := range g.hands {
+				if i != seat && len(g.hands[i]) < len(g.hands[target]) {
+					target = i
+				}
+			}
+			action = map[string]any{"type": "play", "cardId": card.ID, "color": color, "target": target, "uno": true}
+			if g.options.WrongUNOPenalty {
+				action["uno"] = len(g.hands[seat]) == 2
+			}
+		} else if g.drewPlayable {
+			action["type"] = "keep"
+		}
+	}
+	data, _ := json.Marshal(action)
+	return data
 }

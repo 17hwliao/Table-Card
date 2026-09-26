@@ -149,6 +149,9 @@ func (e *Engine) Apply(playerID string, payload json.RawMessage) (any, error) {
 	if err := json.Unmarshal(payload, &action); err != nil {
 		return nil, err
 	}
+	if action.Type == "resign" {
+		return e.resign(playerID)
+	}
 	if action.Type != "place" {
 		return nil, errors.New("五子棋操作类型必须是 place")
 	}

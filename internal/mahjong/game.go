@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -31,6 +32,7 @@ type PublicPlayer struct {
 	Melds       []Meld `json:"melds"`
 	Score       int    `json:"score"`
 	Winner      bool   `json:"winner"`
+	HandCount   int    `json:"handCount"`
 }
 type Snapshot struct {
 	Players       []PublicPlayer `json:"players"`
@@ -43,6 +45,7 @@ type Snapshot struct {
 	CanHu         bool           `json:"canHu"`
 	ExchangeReady bool           `json:"exchangeReady"`
 	CanAddGang    bool           `json:"canAddGang"`
+	CanGang       bool           `json:"canGang"`
 	Round         int            `json:"round"`
 	Dealer        int            `json:"dealer"`
 	NextDealer    int            `json:"nextDealer"`
@@ -52,6 +55,8 @@ type Snapshot struct {
 	Winners       []int          `json:"winners"`
 	Finished      bool           `json:"finished"`
 	Message       string         `json:"message"`
+	Options       Options        `json:"options"`
+	LastWinFan    int            `json:"lastWinFan"`
 }
 type gangPayment struct {
 	Payer    int
@@ -91,17 +96,35 @@ type Game struct {
 	exchange       [Players][]Tile
 	exchangeChosen [Players]bool
 	pendingGang    *gangUpgrade
+	optionsConfig  Options
+	gangDraw       bool
+	gangDiscard    bool
+	discardCount   int
+	lastWinFan     int
+	lastDiscard    *Tile
+	lastDiscarder  int
 }
 
 func New(players []table.Player) (*Game, error) {
+	return NewWithOptions(players, DefaultOptions())
+}
+
+func NewWithOptions(players []table.Player, options Options) (*Game, error) {
+	if err := options.Validate(); err != nil {
+		return nil, err
+	}
 	if len(players) != Players {
 		return nil, errors.New("四川麻将需要 4 名玩家")
 	}
-	g := &Game{dealer: 0, round: 1, nextDealer: 0, turn: 0, phase: "exchange", discarder: -1}
+	g := &Game{dealer: 0, round: 1, nextDealer: 0, turn: 0, phase: "exchange", discarder: -1, optionsConfig: options}
+	g.dealer = rand.Intn(Players)
+	g.nextDealer = g.dealer
+	identities := make(map[string]bool, Players)
 	for i, p := range players {
-		if p.ID == "" {
+		if p.ID == "" || identities[p.ID] {
 			return nil, errors.New("玩家身份无效")
 		}
+		identities[p.ID] = true
 		g.players[i] = p
 		g.missing[i] = -1
 		g.active[i] = true
@@ -119,6 +142,9 @@ func (g *Game) resetHand() {
 	g.active = [Players]bool{true, true, true, true}
 	g.winners = nil
 	g.phase = "exchange"
+	if !g.optionsConfig.ExchangeThree {
+		g.phase = "missing"
+	}
 	g.discarder = -1
 	g.pending = nil
 	g.options = [Players][]string{}
@@ -129,6 +155,12 @@ func (g *Game) resetHand() {
 	g.exchange = [Players][]Tile{}
 	g.exchangeChosen = [Players]bool{}
 	g.pendingGang = nil
+	g.gangDraw = false
+	g.gangDiscard = false
+	g.discardCount = 0
+	g.lastWinFan = 0
+	g.lastDiscard = nil
+	g.lastDiscarder = -1
 	g.turn = g.dealer
 	g.hasDrawn = false
 	deck := make([]Tile, 0, 108)
@@ -162,22 +194,52 @@ func (g *Game) View(viewer string) Snapshot {
 	return g.snapshot(viewer)
 }
 func (g *Game) snapshot(viewer string) Snapshot {
-	s := Snapshot{Turn: g.turn, Phase: g.phase, Round: g.round, Dealer: g.dealer, Wall: len(g.wall), HasDrawn: g.hasDrawn, Discarder: g.discarder, Winners: append([]int(nil), g.winners...), Finished: g.finished, Message: g.message, NextDealer: g.nextDealer}
+	s := Snapshot{Turn: g.turn, Phase: g.phase, Round: g.round, Dealer: g.dealer, Wall: len(g.wall), HasDrawn: g.hasDrawn, Discarder: g.discarder, Winners: append([]int(nil), g.winners...), Finished: g.finished, Message: g.message, NextDealer: g.nextDealer, Options: g.optionsConfig, LastWinFan: g.lastWinFan}
 	if !g.finished && g.phase == "turn" {
 		s.TurnPlayer = g.players[g.turn].ID
+	}
+	if g.lastDiscard != nil {
+		t := *g.lastDiscard
+		s.LastDiscard = &t
+		s.Discarder = g.lastDiscarder
 	}
 	if g.pending != nil {
 		t := *g.pending
 		s.LastDiscard = &t
+		s.Discarder = g.discarder
 	}
 	for i, p := range g.players {
-		s.Players = append(s.Players, PublicPlayer{ID: p.ID, Name: p.Name, Ready: g.ready[i], Active: g.active[i], MissingSuit: g.missing[i], Discards: append([]Tile(nil), g.discards[i]...), Melds: append([]Meld(nil), g.melds[i]...), Score: g.scores[i], Winner: contains(g.winners, i)})
+		missing := g.missing[i]
+		if g.phase == "missing" && p.ID != viewer {
+			missing = -1
+		}
+		melds := append([]Meld(nil), g.melds[i]...)
+		for j := range melds {
+			melds[j].Tiles = append([]Tile(nil), melds[j].Tiles...)
+		}
+		s.Players = append(s.Players, PublicPlayer{ID: p.ID, Name: p.Name, Ready: g.ready[i], Active: g.active[i], MissingSuit: missing, Discards: append([]Tile(nil), g.discards[i]...), Melds: melds, Score: g.scores[i], Winner: contains(g.winners, i), HandCount: len(g.hands[i])})
 		if p.ID == viewer {
 			s.Hand = append([]Tile(nil), g.hands[i]...)
-			s.ClaimOptions = append([]string(nil), g.options[i]...)
+			sort.SliceStable(s.Hand, func(a, b int) bool {
+				if s.Hand[a].Suit != s.Hand[b].Suit {
+					return s.Hand[a].Suit < s.Hand[b].Suit
+				}
+				return s.Hand[a].Rank < s.Hand[b].Rank
+			})
+			if g.responses[i] == "" {
+				s.ClaimOptions = append([]string(nil), g.options[i]...)
+			}
 			s.CanHu = g.phase == "turn" && i == g.turn && g.hasDrawn && g.canSelfWin(i)
 			s.ExchangeReady = g.exchangeChosen[i]
 			s.CanAddGang = g.phase == "turn" && i == g.turn && g.hasDrawn && len(g.wall) > 0 && g.canAddGang(i)
+			if g.phase == "turn" && i == g.turn && g.hasDrawn && len(g.wall) > 0 {
+				for _, tile := range g.hands[i] {
+					if int(tile.Suit) != g.missing[i] && countTile(g.hands[i], tile) == 4 {
+						s.CanGang = true
+						break
+					}
+				}
+			}
 		}
 	}
 	return s
@@ -276,20 +338,26 @@ func (g *Game) Apply(id string, payload json.RawMessage) (Snapshot, error) {
 			break
 		}
 		g.hands[seat] = append(g.hands[seat], g.take())
+		g.gangDraw = false
 		g.hasDrawn = true
 	case "discard":
 		if g.phase != "turn" || seat != g.turn || !g.hasDrawn {
 			return Snapshot{}, errors.New("请在自己的回合摸牌后出牌")
 		}
 		tile := Tile{a.Suit, a.Rank}
-		if a.Suit > 2 || a.Rank < 1 || a.Rank > 9 || !removeTile(&g.hands[seat], tile) {
+		if a.Suit > 2 || a.Rank < 1 || a.Rank > 9 || countTile(g.hands[seat], tile) == 0 {
 			return Snapshot{}, errors.New("手牌中没有这张牌")
 		}
 		if hasSuit(g.hands[seat], g.missing[seat]) && int(tile.Suit) != g.missing[seat] {
-			g.hands[seat] = append(g.hands[seat], tile)
 			return Snapshot{}, errors.New("手里还有缺门牌，必须先打完缺门")
 		}
+		removeTile(&g.hands[seat], tile)
 		g.discards[seat] = append(g.discards[seat], tile)
+		g.discardCount++
+		g.lastDiscard = &tile
+		g.lastDiscarder = seat
+		g.gangDiscard = g.gangDraw
+		g.gangDraw = false
 		g.pending = &tile
 		g.discarder = seat
 		g.hasDrawn = false
@@ -326,13 +394,14 @@ func (g *Game) Apply(id string, payload json.RawMessage) (Snapshot, error) {
 			break
 		}
 		g.hands[seat] = append(g.hands[seat], g.take())
+		g.gangDraw = true
 		g.message = "暗杠完成，已补摸一张牌"
 	case "add_gang":
 		if g.phase != "turn" || seat != g.turn || !g.hasDrawn || len(g.wall) == 0 {
 			return Snapshot{}, errors.New("当前不能补杠")
 		}
 		tile := Tile{a.Suit, a.Rank}
-		if a.Suit > 2 || a.Rank < 1 || a.Rank > 9 || int(tile.Suit) == g.missing[seat] || !removeTile(&g.hands[seat], tile) {
+		if a.Suit > 2 || a.Rank < 1 || a.Rank > 9 || int(tile.Suit) == g.missing[seat] || countTile(g.hands[seat], tile) == 0 {
 			return Snapshot{}, errors.New("补杠需要打出一张已碰牌的第四张")
 		}
 		meldIndex := -1
@@ -343,9 +412,9 @@ func (g *Game) Apply(id string, payload json.RawMessage) (Snapshot, error) {
 			}
 		}
 		if meldIndex < 0 {
-			g.hands[seat] = append(g.hands[seat], tile)
 			return Snapshot{}, errors.New("没有找到可以升级的碰牌")
 		}
+		removeTile(&g.hands[seat], tile)
 		g.pending = &tile
 		g.pendingGang = &gangUpgrade{Seat: seat, MeldIndex: meldIndex, Tile: tile}
 		g.discarder = seat
@@ -369,9 +438,11 @@ func (g *Game) Apply(id string, payload json.RawMessage) (Snapshot, error) {
 			return Snapshot{}, errors.New("当前手牌不能自摸")
 		}
 		g.settleWin(seat, -1, true)
+		if len(g.winners) == 0 {
+			g.nextDealer = seat
+		}
 		g.winners = append(g.winners, seat)
 		g.active[seat] = false
-		g.nextDealer = seat
 		g.discarder = seat
 		g.message = "自摸胡牌，玩家已离场"
 		g.afterWin()
@@ -392,7 +463,7 @@ func (g *Game) startClaims(discarder int, tile Tile) {
 		if g.canWin(i, tile) {
 			opts = append(opts, "hu")
 		}
-		if g.missing[i] != int(tile.Suit) && countTile(g.hands[i], tile) >= 2 {
+		if len(g.wall) > 0 && g.missing[i] != int(tile.Suit) && countTile(g.hands[i], tile) >= 2 {
 			opts = append(opts, "peng")
 		}
 		if g.missing[i] != int(tile.Suit) && countTile(g.hands[i], tile) >= 3 && len(g.wall) > 0 {
@@ -423,7 +494,9 @@ func (g *Game) resolveClaims() {
 			}
 		}
 		if len(winners) > 0 {
-			g.nextDealer = winners[0]
+			if len(g.winners) == 0 {
+				g.nextDealer = winners[0]
+			}
 			for _, winner := range winners {
 				g.settleWin(winner, g.discarder, false)
 				g.winners = append(g.winners, winner)
@@ -454,6 +527,7 @@ func (g *Game) resolveClaims() {
 		g.pendingGang = nil
 		g.hands[g.turn] = append(g.hands[g.turn], g.take())
 		g.hasDrawn = true
+		g.gangDraw = true
 		g.message = "补杠完成，已补摸一张牌"
 		return
 	}
@@ -465,7 +539,7 @@ func (g *Game) resolveClaims() {
 		}
 	}
 	if len(hu) > 0 {
-		for distance := 1; distance < Players; distance++ {
+		for distance := 1; len(g.winners) == 0 && distance < Players; distance++ {
 			seat := (g.discarder + distance) % Players
 			if contains(hu, seat) {
 				g.nextDealer = seat
@@ -477,10 +551,10 @@ func (g *Game) resolveClaims() {
 			g.winners = append(g.winners, winner)
 			g.active[winner] = false
 		}
-		if len(hu) == 0 {
-			g.nextDealer = (g.dealer + 1) % Players
+		g.message = "点炮胡牌：胡牌玩家已离场"
+		if len(hu) > 1 {
+			g.message = "一炮多响：所有胡牌玩家已离场"
 		}
-		g.message = "一炮多响：所有胡牌玩家已离场"
 		g.pending = nil
 		g.afterWin()
 		return
@@ -497,6 +571,8 @@ func (g *Game) resolveClaims() {
 	}
 	g.pending = nil
 	if best >= 0 {
+		removeTile(&g.discards[g.discarder], tile)
+		g.gangDraw = false
 		if bestClaim == "peng" {
 			removeN(&g.hands[best], tile, 2)
 			g.melds[best] = append(g.melds[best], Meld{Kind: "peng", Tiles: []Tile{tile, tile, tile}, From: g.discarder})
@@ -513,6 +589,7 @@ func (g *Game) resolveClaims() {
 			g.phase = "turn"
 			g.hands[best] = append(g.hands[best], g.take())
 			g.hasDrawn = true
+			g.gangDraw = true
 			g.message = "明杠完成，已补摸一张牌"
 		}
 		return
@@ -537,7 +614,7 @@ func (g *Game) afterWin() {
 			active++
 		}
 	}
-	if active == 0 {
+	if active < 2 {
 		g.finishWithoutFlow()
 		return
 	}
@@ -590,8 +667,9 @@ func (g *Game) settleWin(winner, source int, selfDraw bool) {
 	if !selfDraw && g.pending != nil {
 		hand = append(hand, *g.pending)
 	}
-	fan := scoreFan(hand, g.melds[winner])
-	amount := fan
+	fan := g.winFan(winner, hand, selfDraw)
+	g.lastWinFan = fan
+	amount := fan * g.optionsConfig.BaseScore
 	if selfDraw {
 		for i := 0; i < 4; i++ {
 			if i != winner && g.active[i] {
@@ -603,43 +681,6 @@ func (g *Game) settleWin(winner, source int, selfDraw bool) {
 		g.scores[winner] += amount
 		g.scores[source] -= amount
 	}
-}
-func scoreFan(hand []Tile, melds []Meld) int {
-	fan := 1
-	if len(hand) == 0 {
-		return fan
-	}
-	first := hand[0].Suit
-	pure := true
-	for _, t := range hand {
-		if t.Suit != first {
-			pure = false
-		}
-	}
-	for _, m := range melds {
-		for _, t := range m.Tiles {
-			if t.Suit != first {
-				pure = false
-			}
-		}
-	}
-	if pure {
-		fan += 4
-	}
-	if len(melds) == 0 && sevenPairs(hand) {
-		fan += 4
-	} else {
-		triplets := true
-		for _, m := range melds {
-			if m.Kind == "chi" {
-				triplets = false
-			}
-		}
-		if triplets && allTripletShape(hand, 4-len(melds)) {
-			fan += 2
-		}
-	}
-	return fan
 }
 func allTripletShape(hand []Tile, sets int) bool {
 	if len(hand) != sets*3+2 {
@@ -707,8 +748,9 @@ func (g *Game) endRound() {
 		}
 		for receiver := 0; receiver < Players; receiver++ {
 			if receiver != pig && !pigs[receiver] {
-				g.scores[pig] -= 2
-				g.scores[receiver] += 2
+				amount := g.optionsConfig.FlowerPigPenalty * g.optionsConfig.BaseScore
+				g.scores[pig] -= amount
+				g.scores[receiver] += amount
 			}
 		}
 	}
@@ -725,19 +767,12 @@ func (g *Game) endRound() {
 			}
 			fan := g.readyFan(receiver)
 			if fan > 0 {
-				g.scores[payer] -= fan
-				g.scores[receiver] += fan
+				g.scores[payer] -= fan * g.optionsConfig.BaseScore
+				g.scores[receiver] += fan * g.optionsConfig.BaseScore
 			}
 		}
 	}
 	g.message = "本局结束：已完成退税、查花猪、查叫"
-	for i := 0; i < 4; i++ {
-		if g.active[i] && len(g.hands[i]) >= 2 && g.missing[i] >= 0 {
-			if ready(g.hands[i], g.missing[i], 4-len(g.melds[i])) {
-				g.message = "本局结束：未胡玩家已完成基础听牌判定"
-			}
-		}
-	}
 }
 func (g *Game) finishWithoutFlow() {
 	if g.finished {
@@ -767,6 +802,7 @@ func (g *Game) applyGangPayment(payer, receiver, amount int) {
 	if payer < 0 || payer >= Players || receiver < 0 || receiver >= Players || payer == receiver {
 		return
 	}
+	amount *= g.optionsConfig.BaseScore
 	g.scores[payer] -= amount
 	g.scores[receiver] += amount
 	g.gangPayments = append(g.gangPayments, gangPayment{Payer: payer, Receiver: receiver, Amount: amount})
@@ -785,9 +821,13 @@ func (g *Game) readyFan(seat int) int {
 			continue
 		}
 		for rank := 1; rank <= 9; rank++ {
-			candidate := append(append([]Tile(nil), hand...), Tile{uint8(s), uint8(rank)})
+			tile := Tile{uint8(s), uint8(rank)}
+			if g.visibleCount(seat, tile) >= 4 {
+				continue
+			}
+			candidate := append(append([]Tile(nil), hand...), tile)
 			if winning(candidate, sets) || sets == 4 && sevenPairs(candidate) {
-				fan := scoreFan(candidate, g.melds[seat])
+				fan := g.capFan(patternFan(candidate, g.melds[seat], g.optionsConfig.DragonPairBonus))
 				if fan > max {
 					max = fan
 				}
@@ -825,8 +865,8 @@ func sevenPairs(hand []Tile) bool {
 	}
 	pairs := 0
 	for _, n := range counts {
-		if n == 2 {
-			pairs++
+		if n == 2 || n == 4 {
+			pairs += n / 2
 		} else if n != 0 {
 			return false
 		}
@@ -884,7 +924,8 @@ func ready(hand []Tile, missing, sets int) bool {
 			continue
 		}
 		for r := 1; r <= 9; r++ {
-			if winning(append(append([]Tile(nil), hand...), Tile{uint8(s), uint8(r)}), sets) {
+			candidate := append(append([]Tile(nil), hand...), Tile{uint8(s), uint8(r)})
+			if winning(candidate, sets) || sets == 4 && sevenPairs(candidate) {
 				return true
 			}
 		}
@@ -970,4 +1011,12 @@ func (e *Engine) Mode() table.Mode   { return table.MahjongMode }
 func (e *Engine) View(id string) any { return e.game.View(id) }
 func (e *Engine) Apply(id string, payload json.RawMessage) (any, error) {
 	return e.game.Apply(id, payload)
+}
+
+func NewEngineWithOptions(players []table.Player, options Options) (*Engine, error) {
+	g, err := NewWithOptions(players, options)
+	if err != nil {
+		return nil, err
+	}
+	return &Engine{game: g}, nil
 }

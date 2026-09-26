@@ -7,12 +7,18 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/17hwliao/table-card-independent/internal/games"
 	"github.com/17hwliao/table-card-independent/internal/table"
 )
 
 type Server struct {
+	opMu     sync.Mutex
+	runtime  map[string]*roomRuntime
+	stats    *statStore
+	stop     chan struct{}
+	stopOnce sync.Once
 	rooms    *table.RoomManager
 	registry *games.Registry
 	mu       sync.RWMutex
@@ -40,10 +46,13 @@ var modes = []modeInfo{
 }
 
 func New() *Server {
-	return &Server{
+	s := &Server{
 		rooms: table.NewRoomManager(), registry: games.NewDefaultRegistry(),
 		engines: make(map[string]games.Engine), hub: newRoomHub(),
+		runtime: make(map[string]*roomRuntime), stats: newStatStore(), stop: make(chan struct{}),
 	}
+	go s.tickLoop()
+	return s
 }
 
 func (s *Server) Handler() http.Handler {
@@ -52,6 +61,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/modes", s.listModes)
 	mux.HandleFunc("POST /api/rooms", s.createRoom)
+	mux.HandleFunc("GET /api/rooms", s.listRooms)
+	mux.HandleFunc("POST /api/match", s.quickMatch)
+	mux.HandleFunc("GET /api/stats", s.playerStats)
 	mux.HandleFunc("GET /api/rooms/{code}/ws", s.roomWebSocket)
 	mux.HandleFunc("/api/rooms/", s.roomRoute)
 	return mux
@@ -67,7 +79,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "table-card", "protocol": "2"})
 }
 
 func (s *Server) listModes(w http.ResponseWriter, _ *http.Request) {
@@ -75,16 +87,22 @@ func (s *Server) listModes(w http.ResponseWriter, _ *http.Request) {
 }
 
 type createRoomRequest struct {
-	Mode     table.Mode `json:"mode"`
-	Seats    int        `json:"seats"`
-	Bots     int        `json:"bots"`
-	PlayerID string     `json:"playerId"`
-	Name     string     `json:"name"`
+	Options  json.RawMessage `json:"options,omitempty"`
+	Mode     table.Mode      `json:"mode"`
+	Seats    int             `json:"seats"`
+	Bots     int             `json:"bots"`
+	PlayerID string          `json:"playerId"`
+	Name     string          `json:"name"`
 }
 
 func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
 	var request createRoomRequest
 	if !readJSON(w, r, &request) {
+		return
+	}
+	if !authorize(w, r, request.PlayerID) {
 		return
 	}
 	definition, ok := modeByID(request.Mode)
@@ -96,8 +114,8 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "该模式的座位数无效")
 		return
 	}
-	if request.Bots < 0 || request.Bots >= request.Seats || request.Bots > 0 && request.Mode != table.LandlordMode {
-		writeError(w, http.StatusBadRequest, "当前只有斗地主支持 Sunjiajia 人机训练，机器人数量必须小于座位数")
+	if request.Bots < 0 || request.Bots >= request.Seats {
+		writeError(w, http.StatusBadRequest, "机器人数量必须小于座位数")
 		return
 	}
 	room, err := s.rooms.Create(request.Mode, request.Seats, table.Player{ID: request.PlayerID, Name: request.Name})
@@ -105,6 +123,8 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	room.SetOptions(request.Options)
+	s.runtime[room.Snapshot().Code] = newRoomRuntime()
 	for i := 0; i < request.Bots; i++ {
 		bot := table.Player{ID: room.Snapshot().Code + "-sunjiajia-" + string(rune('1'+i)), Name: "Sunjiajia " + string(rune('A'+i)), Bot: true}
 		if err := room.Join(bot); err != nil {
@@ -122,6 +142,8 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) < 3 || parts[0] != "api" || parts[1] != "rooms" {
 		http.NotFound(w, r)
@@ -143,6 +165,9 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		playerID := r.URL.Query().Get("playerId")
+		if !authorize(w, r, playerID) {
+			return
+		}
 		if !isHumanRoomPlayer(room.Snapshot(), playerID) {
 			writeError(w, http.StatusForbidden, "玩家不在这个房间中")
 			return
@@ -155,12 +180,58 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch parts[3] {
+	case "leave":
+		var request struct {
+			PlayerID string `json:"playerId"`
+		}
+		if !readJSON(w, r, &request) {
+			return
+		}
+		if !authorize(w, r, request.PlayerID) {
+			return
+		}
+		if err := s.leaveRoom(room, request.PlayerID); err != nil {
+			writeRoomError(w, err)
+			return
+		}
+	case "rematch":
+		var request struct {
+			PlayerID string `json:"playerId"`
+		}
+		if !readJSON(w, r, &request) {
+			return
+		}
+		if !authorize(w, r, request.PlayerID) {
+			return
+		}
+		if !isHumanRoomPlayer(room.Snapshot(), request.PlayerID) {
+			writeError(w, 403, "玩家不在房间内")
+			return
+		}
+		old, exists := s.findEngine(parts[2])
+		if !exists || !gameFinished(old) {
+			writeError(w, 409, "当前对局尚未结束")
+			return
+		}
+		engine, err := s.configuredEngine(room.Snapshot())
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		s.mu.Lock()
+		s.engines[parts[2]] = engine
+		s.mu.Unlock()
+		s.runtime[parts[2]] = newRoomRuntime()
+		s.broadcastGameState(parts[2], room, engine)
 	case "join":
 		var player table.Player
 		if !readJSON(w, r, &player) {
 			return
 		}
 		player.Bot = false
+		if !authorize(w, r, player.ID) {
+			return
+		}
 		if err := room.Join(player); err != nil {
 			writeRoomError(w, err)
 			return
@@ -174,6 +245,9 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 		if !readJSON(w, r, &request) {
 			return
 		}
+		if !authorize(w, r, request.PlayerID) {
+			return
+		}
 		if err := room.SetReady(request.PlayerID, request.Ready); err != nil {
 			writeRoomError(w, err)
 			return
@@ -181,7 +255,15 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 		s.broadcastRoom(room)
 	case "start":
 		snapshot := room.Snapshot()
-		engine, err := s.registry.New(snapshot.Mode, snapshot.Players)
+		id := r.Header.Get("X-Player-ID")
+		if !authorize(w, r, id) {
+			return
+		}
+		if !isHumanRoomPlayer(snapshot, id) {
+			writeError(w, 403, "玩家不在此房间")
+			return
+		}
+		engine, err := s.configuredEngine(snapshot)
 		if err != nil {
 			writeError(w, http.StatusConflict, err.Error())
 			return
@@ -193,6 +275,7 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		s.engines[parts[2]] = engine
 		s.mu.Unlock()
+		s.runtime[parts[2]].nextBot = time.Now().Add(3 * time.Second)
 		s.broadcastGameState(parts[2], room, engine)
 	case "action":
 		engine, ok := s.findEngine(parts[2])
@@ -211,7 +294,10 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "玩家不在这个房间中")
 			return
 		}
-		result, err := engine.Apply(request.PlayerID, request.Action)
+		if !authorize(w, r, request.PlayerID) {
+			return
+		}
+		result, err := s.applyLocked(parts[2], room, engine, request.PlayerID, request.Action)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

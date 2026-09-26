@@ -16,24 +16,51 @@ import (
 )
 
 type Client struct {
-	baseURL string
-	http    *http.Client
-	stateMu sync.RWMutex
-	socket  *websocket.Conn
-	ctx     context.Context
-	cancel  context.CancelFunc
-	writeMu sync.Mutex
+	closed   bool
+	playerID string
+	token    string
+	baseURL  string
+	http     *http.Client
+	stateMu  sync.RWMutex
+	socket   *websocket.Conn
+	ctx      context.Context
+	cancel   context.CancelFunc
+	writeMu  sync.Mutex
+}
+
+func (c *Client) Identity(id, token string) { c.playerID = id; c.token = token }
+func (c *Client) Leave(ctx context.Context, code, id string) error {
+	return c.request(ctx, http.MethodPost, "/api/rooms/"+url.PathEscape(code)+"/leave", map[string]string{"playerId": id}, nil)
+}
+func (c *Client) Rematch(ctx context.Context, code, id string) error {
+	return c.request(ctx, http.MethodPost, "/api/rooms/"+url.PathEscape(code)+"/rematch", map[string]string{"playerId": id}, nil)
+}
+func (c *Client) Stats(ctx context.Context, mode table.Mode, id string) (json.RawMessage, error) {
+	var data json.RawMessage
+	err := c.request(ctx, http.MethodGet, "/api/stats?mode="+url.QueryEscape(string(mode))+"&playerId="+url.QueryEscape(id), nil, &data)
+	return data, err
+}
+func (c *Client) Rooms(ctx context.Context, mode table.Mode) ([]table.Snapshot, error) {
+	var data []table.Snapshot
+	err := c.request(ctx, http.MethodGet, "/api/rooms?mode="+url.QueryEscape(string(mode)), nil, &data)
+	return data, err
+}
+func (c *Client) Match(ctx context.Context, mode table.Mode, p table.Player) (table.Snapshot, error) {
+	var room table.Snapshot
+	err := c.request(ctx, http.MethodPost, "/api/match", map[string]any{"mode": mode, "playerId": p.ID, "name": p.Name}, &room)
+	return room, err
 }
 
 type Envelope struct {
-	Type     string          `json:"type"`
-	Data     json.RawMessage `json:"data"`
-	Room     json.RawMessage `json:"room"`
-	Game     json.RawMessage `json:"game"`
-	Text     string          `json:"text"`
-	Name     string          `json:"name"`
-	PlayerID string          `json:"playerId"`
-	Error    string          `json:"error"`
+	PauseUntil int64           `json:"pauseUntil"`
+	Type       string          `json:"type"`
+	Data       json.RawMessage `json:"data"`
+	Room       json.RawMessage `json:"room"`
+	Game       json.RawMessage `json:"game"`
+	Text       string          `json:"text"`
+	Name       string          `json:"name"`
+	PlayerID   string          `json:"playerId"`
+	Error      string          `json:"error"`
 }
 
 func New(address string) *Client {
@@ -62,10 +89,14 @@ func (c *Client) Modes(ctx context.Context) ([]struct {
 	return modes, err
 }
 
-func (c *Client) CreateRoom(ctx context.Context, mode table.Mode, seats, bots int, player table.Player) (table.Snapshot, error) {
+func (c *Client) CreateRoom(ctx context.Context, mode table.Mode, seats, bots int, player table.Player, options ...json.RawMessage) (table.Snapshot, error) {
 	var room table.Snapshot
+	var config json.RawMessage
+	if len(options) > 0 {
+		config = options[0]
+	}
 	err := c.request(ctx, http.MethodPost, "/api/rooms", map[string]any{
-		"mode": mode, "seats": seats, "bots": bots, "playerId": player.ID, "name": player.Name,
+		"mode": mode, "seats": seats, "bots": bots, "playerId": player.ID, "name": player.Name, "options": config,
 	}, &room)
 	return room, err
 }
@@ -104,19 +135,25 @@ func (c *Client) Connect(ctx context.Context, code, playerID string) error {
 	query := base.Query()
 	query.Set("playerId", playerID)
 	base.RawQuery = query.Encode()
-	conn, _, err := websocket.Dial(ctx, base.String(), nil)
+	header := http.Header{}
+	header.Set("X-Player-Token", c.token)
+	conn, _, err := websocket.Dial(ctx, base.String(), &websocket.DialOptions{HTTPHeader: header})
 	if err != nil {
 		return err
 	}
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
+	if c.closed {
+		_ = conn.CloseNow()
+		return fmt.Errorf("连接已关闭")
+	}
 	if c.cancel != nil {
 		c.cancel()
 	}
 	if c.socket != nil {
 		_ = c.socket.Close(websocket.StatusNormalClosure, "reconnect")
 	}
-	c.ctx, c.cancel = context.WithCancel(ctx)
+	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.socket = conn
 	return nil
 }
@@ -159,6 +196,7 @@ func (c *Client) Close() {
 	c.stateMu.Lock()
 	cancel, conn := c.cancel, c.socket
 	c.cancel, c.socket, c.ctx = nil, nil, nil
+	c.closed = true
 	c.stateMu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -186,6 +224,8 @@ func (c *Client) request(ctx context.Context, method, path string, body, target 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	req.Header.Set("X-Player-Token", c.token)
+	req.Header.Set("X-Player-ID", c.playerID)
 	response, err := c.http.Do(req)
 	if err != nil {
 		return err

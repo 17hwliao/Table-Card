@@ -39,26 +39,25 @@ type Snapshot struct {
 }
 
 type Game struct {
-	mu          sync.RWMutex
-	players     [2]table.Player
-	board       [BoardSize][BoardSize]uint8
-	previous    [BoardSize][BoardSize]uint8
-	hasPrevious bool
-	turn        uint8
-	last        *Move
-	captures    [3]int
-	moves       int
-	passes      int
-	finished    bool
-	winner      string
-	draw        bool
+	mu       sync.RWMutex
+	players  [2]table.Player
+	board    [BoardSize][BoardSize]uint8
+	history  map[[BoardSize][BoardSize]uint8]bool
+	turn     uint8
+	last     *Move
+	captures [3]int
+	moves    int
+	passes   int
+	finished bool
+	winner   string
+	draw     bool
 }
 
 func New(players []table.Player) (*Game, error) {
 	if len(players) != 2 || players[0].ID == "" || players[1].ID == "" || players[0].ID == players[1].ID {
 		return nil, ErrPlayers
 	}
-	return &Game{players: [2]table.Player{players[0], players[1]}, turn: Black}, nil
+	return &Game{players: [2]table.Player{players[0], players[1]}, turn: Black, history: map[[BoardSize][BoardSize]uint8]bool{{}: true}}, nil
 }
 
 func (g *Game) Snapshot() Snapshot { g.mu.RLock(); defer g.mu.RUnlock(); return g.snapshotLocked() }
@@ -75,42 +74,16 @@ func (g *Game) Play(playerID string, x, y int, pass bool) (Snapshot, error) {
 	move := Move{X: x, Y: y, Pass: pass}
 	if pass {
 		g.passes++
-		g.hasPrevious = false
 		g.last = &move
 		if g.passes >= 2 {
 			g.finishLocked()
 		}
 	} else {
-		if x < 0 || x >= BoardSize || y < 0 || y >= BoardSize || g.board[y][x] != Empty {
-			return Snapshot{}, errors.New("落子位置无效或已占用")
+		next, captured, err := g.candidate(x, y)
+		if err != nil {
+			return Snapshot{}, err
 		}
-		next := g.board
-		next[y][x] = g.turn
-		captured := 0
-		seen := [BoardSize][BoardSize]bool{}
-		for _, d := range neighbors(x, y) {
-			nx, ny := x+d[0], y+d[1]
-			if inBoard(nx, ny) && next[ny][nx] == opponent(g.turn) && !seen[ny][nx] {
-				group, liberties := collect(next, nx, ny)
-				for _, p := range group {
-					seen[p[1]][p[0]] = true
-				}
-				if liberties == 0 {
-					for _, p := range group {
-						next[p[1]][p[0]] = Empty
-						captured++
-					}
-				}
-			}
-		}
-		if _, liberties := collect(next, x, y); liberties == 0 {
-			return Snapshot{}, errors.New("禁止自杀着")
-		}
-		if g.hasPrevious && next == g.previous {
-			return Snapshot{}, errors.New("违反劫争规则：不能立即还原上一手棋形")
-		}
-		g.previous = g.board
-		g.hasPrevious = true
+		g.history[next] = true
 		g.board = next
 		g.captures[g.turn] += captured
 		g.last = &move
@@ -126,10 +99,12 @@ func (g *Game) finishLocked() { g.finished = true }
 // score fields are derived from the final position and exposed through snapshotLocked.
 func (g *Game) snapshotLocked() Snapshot {
 	black, white := score(g.board)
-	white += 6.5
+	white += 7.5
 	view := Snapshot{Board: g.board, Turn: g.turn, Captures: g.captures, Moves: g.moves, ConsecutivePasses: g.passes, Finished: g.finished, Winner: g.winner, Draw: g.draw, BlackScore: black, WhiteScore: white}
 	if !g.finished {
 		view.TurnPlayer = g.players[int(g.turn)-1].ID
+	} else if g.winner != "" {
+		view.Winner = g.winner
 	} else if black > white {
 		view.Winner = g.players[0].ID
 	} else if white > black {
@@ -250,6 +225,9 @@ func (e *Engine) Apply(playerID string, payload json.RawMessage) (any, error) {
 	}
 	if err := json.Unmarshal(payload, &a); err != nil {
 		return nil, err
+	}
+	if a.Type == "resign" {
+		return e.resign(playerID)
 	}
 	if a.Type != "play" && a.Type != "pass" {
 		return nil, errors.New("围棋操作类型必须是 play 或 pass")

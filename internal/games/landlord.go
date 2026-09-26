@@ -97,51 +97,38 @@ func (e *landlordEngine) Apply(playerID string, payload json.RawMessage) (any, e
 	default:
 		return nil, errors.New("斗地主操作类型必须是 bid 或 play")
 	}
-	if err := e.runBots(); err != nil {
-		return nil, err
-	}
 	return e.viewLocked(playerID), nil
 }
 
-func (e *landlordEngine) runBots() error {
-	for steps := 0; steps < 96; steps++ {
-		if e.round.Phase() == landlord.Complete || e.round.Phase() == landlord.Redeal {
-			return nil
-		}
-		seat := e.round.Turn()
-		if seat < 0 || seat >= len(e.players) || !e.players[seat].Bot {
-			return nil
-		}
-		agent := sunjiajia.Agent{}
-		switch e.round.Phase() {
-		case landlord.Auction:
-			bid := agent.Bid(e.round.Hand(seat))
-			if bid <= e.round.HighestBid() {
-				bid = 0
-			}
-			if err := e.round.Bid(seat, bid); err != nil {
-				return err
-			}
-			if e.round.Phase() == landlord.Redeal {
-				e.round = landlord.NewRound()
-			}
-		case landlord.Playing:
-			var counts [3]int
-			for i := range counts {
-				counts[i] = e.round.CardsLeft(i)
-			}
-			decision := agent.Choose(e.round.Hand(seat), sunjiajia.Table{
-				Seat: seat, Landlord: e.round.Landlord(), CardsLeft: counts,
-				LastTrick: e.round.CurrentTrick(),
-			})
-			if err := e.round.Play(seat, decision); err != nil {
-				return err
-			}
-		default:
-			return nil
-		}
+// BotAction chooses one move; the server controls human-paced scheduling.
+func (e *landlordEngine) BotAction(playerID string) json.RawMessage {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	seat := e.round.Turn()
+	if seat < 0 || seat >= len(e.players) || e.players[seat].ID != playerID {
+		return nil
 	}
-	return errors.New("Sunjiajia 连续操作达到安全上限")
+	agent := sunjiajia.Agent{}
+	var action any
+	switch e.round.Phase() {
+	case landlord.Auction:
+		bid := agent.Bid(e.round.Hand(seat))
+		if bid <= e.round.HighestBid() {
+			bid = 0
+		}
+		action = map[string]any{"type": "bid", "bid": bid}
+	case landlord.Playing:
+		var counts [3]int
+		for i := range counts {
+			counts[i] = e.round.CardsLeft(i)
+		}
+		decision := agent.Choose(e.round.Hand(seat), sunjiajia.Table{Seat: seat, Landlord: e.round.Landlord(), CardsLeft: counts, LastTrick: e.round.CurrentTrick()})
+		action = map[string]any{"type": "play", "cards": decision}
+	default:
+		return nil
+	}
+	data, _ := json.Marshal(action)
+	return data
 }
 
 func (e *landlordEngine) viewLocked(viewerID string) landlordView {

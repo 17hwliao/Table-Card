@@ -89,13 +89,12 @@ func (c *LiarBar) View(s ui.Snapshot) string {
 	if len(v.Hand) == 0 {
 		fmt.Fprintln(&b, "（没有手牌，只能质疑上一手）")
 	}
+	labels := make([]string, len(v.Hand))
 	for i, card := range v.Hand {
-		fmt.Fprintf(&b, "%s%2d %s%s   ", selectedMark(c.selected[i]), i+1, cardBox(liarRank(card.Rank), c.selected[i], ""), reset)
-		if (i+1)%8 == 0 {
-			fmt.Fprintln(&b)
-		}
+		labels[i] = liarRank(card.Rank)
 	}
-	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, handFaces(labels, nil, c.selected, -1, s.Width))
+
 	if v.Winner != "" {
 		fmt.Fprintf(&b, "\n%s游戏结束，获胜者：%s%s\n", gold, playerName(s, v.Winner), reset)
 	}

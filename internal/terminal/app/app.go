@@ -13,8 +13,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/17hwliao/table-card-independent/internal/table"
+	"github.com/17hwliao/table-card-independent/internal/terminal/audio"
 	"github.com/17hwliao/table-card-independent/internal/terminal/modes"
 	"github.com/17hwliao/table-card-independent/internal/terminal/netclient"
+	"github.com/17hwliao/table-card-independent/internal/terminal/profile"
 	modeui "github.com/17hwliao/table-card-independent/internal/terminal/ui"
 )
 
@@ -57,26 +59,35 @@ type actionSent struct{ err error }
 type chatSent struct{ err error }
 
 type Model struct {
-	address string
-	api     *netclient.Client
-	page    screen
-	modes   []modeInfo
-	mode    int
-	seats   int
-	bots    bool
-	name    textinput.Model
-	code    textinput.Model
-	editing string
-	room    table.Snapshot
-	player  table.Player
-	game    json.RawMessage
-	control modeui.Controller
-	width   int
-	height  int
-	status  string
-	chat    textinput.Model
-	chatOn  bool
-	chatLog []string
+	sound        *audio.Player
+	menuOn       bool
+	overlay      string
+	optionsOn    bool
+	optionIndex  int
+	settings     map[table.Mode]map[string]any
+	pending      bool
+	reconnecting bool
+	pauseUntil   int64
+	address      string
+	api          *netclient.Client
+	page         screen
+	modes        []modeInfo
+	mode         int
+	seats        int
+	bots         bool
+	name         textinput.Model
+	code         textinput.Model
+	editing      string
+	room         table.Snapshot
+	player       table.Player
+	game         json.RawMessage
+	control      modeui.Controller
+	width        int
+	height       int
+	status       string
+	chat         textinput.Model
+	chatOn       bool
+	chatLog      []string
 }
 
 func New(address, playerName string) *Model {
@@ -97,13 +108,43 @@ func New(address, playerName string) *Model {
 	chat.Prompt = "聊天 › "
 	chat.CharLimit = 300
 	chat.SetWidth(50)
-	return &Model{address: address, page: homeScreen, name: name, code: code, chat: chat, seats: 2, status: "正在连接牌桌服务…", width: 90, height: 30}
+	return &Model{sound: audio.New(), settings: defaultSettings(), address: address, page: homeScreen, name: name, code: code, chat: chat, seats: 2, status: "正在连接牌桌服务…", width: 90, height: 30}
 }
 
-func (m *Model) Init() tea.Cmd { return loadModes(m.address) }
+func (m *Model) Init() tea.Cmd { return tea.Batch(loadModes(m.address), clockTick()) }
 
 func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := message.(type) {
+	case clockMsg:
+		return m, clockTick()
+	case panelMsg:
+		m.pending = false
+		if msg.err != nil {
+			m.status = msg.err.Error()
+		} else {
+			m.overlay = msg.text
+		}
+		return m, nil
+	case reconnectMsg:
+		if msg.client != m.api {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.status = fmt.Sprintf("重连第 %d 次失败；Del 离桌", msg.attempt)
+			return m, reconnect(m.api, m.room.Code, m.player.ID, msg.attempt+1)
+		}
+		m.reconnecting = false
+		m.status = "已恢复房间连接"
+		return m, readSocket(m.api)
+	case tea.MouseClickMsg:
+		if m.page == gameScreen && !m.chatOn && m.overlay == "" && msg.Button == tea.MouseLeft {
+			if control, ok := m.control.(interface {
+				Mouse(modeui.Snapshot, int, int) modeui.Result
+			}); ok {
+				return m, m.submit(control.Mouse(m.controllerSnapshot(), msg.X, msg.Y-2))
+			}
+		}
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
@@ -120,6 +161,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case connected:
+		m.pending = false
 		if msg.err != nil {
 			m.status = "房间连接失败：" + msg.err.Error()
 			return m, nil
@@ -130,6 +172,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.control = nil
 		m.chatLog = nil
 		m.status = "实时连接成功"
+		m.reconnecting = false
+		if err := m.sound.SetMode(m.room.Mode); err != nil {
+			m.status = "声音加载失败：" + err.Error()
+		}
 		return m, readSocket(msg.client)
 	case roomUpdated:
 		if msg.client != m.api {
@@ -148,7 +194,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err != nil {
 			m.status = "实时连接断开：" + msg.err.Error()
-			return m, nil
+			m.reconnecting = true
+			return m, reconnect(m.api, m.room.Code, m.player.ID, 1)
 		}
 		m.applyEnvelope(msg.envelope)
 		return m, readSocket(msg.client)
@@ -162,7 +209,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "聊天发送失败：" + msg.err.Error()
 		}
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m, m.key(msg)
 	}
 	return m, nil
@@ -177,7 +224,11 @@ func (m *Model) applyEnvelope(envelope netclient.Envelope) {
 		m.status = "等待玩家准备"
 	case "state":
 		_ = json.Unmarshal(envelope.Room, &m.room)
+		if len(m.game) > 0 && string(m.game) != string(envelope.Game) {
+			m.sound.Effect(effectSeed(envelope.Game))
+		}
 		m.game = append(m.game[:0], envelope.Game...)
+		m.pauseUntil = envelope.PauseUntil
 		if m.room.Phase == table.InProgress {
 			if m.control == nil || m.control.Mode() != m.room.Mode {
 				m.control = modes.New(m.room.Mode)
@@ -201,8 +252,7 @@ func (m *Model) applyEnvelope(envelope netclient.Envelope) {
 func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 	key := message.String()
 	if key == "ctrl+c" {
-		m.closeRoom()
-		return tea.Quit
+		return tea.Sequence(m.leave(), tea.Quit)
 	}
 	if m.editing != "" {
 		if key == "esc" {
@@ -212,9 +262,13 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		if key == "enter" {
+			joinAfter := m.editing == "join"
 			m.name.Blur()
 			m.code.Blur()
 			m.editing = ""
+			if joinAfter {
+				return m.join()
+			}
 			return nil
 		}
 		var cmd tea.Cmd
@@ -247,6 +301,33 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 		m.chat, cmd = m.chat.Update(message)
 		return cmd
 	}
+	if key == "m" {
+		muted, err := m.sound.Toggle()
+		if err != nil {
+			m.status = "无法开启声音：" + err.Error()
+		} else if muted {
+			m.status = "声音已关闭"
+		} else {
+			m.status = "声音已开启 · M 关闭"
+		}
+		return nil
+	}
+	if m.optionsOn {
+		return m.optionKey(key)
+	}
+	if m.overlay != "" {
+		if key == "esc" || key == "enter" {
+			m.overlay = ""
+		}
+		return nil
+	}
+	if key == "f1" || key == "?" {
+		m.overlay = rulesFor(m.currentMode())
+		return nil
+	}
+	if m.pending {
+		return nil
+	}
 
 	switch m.page {
 	case homeScreen:
@@ -260,8 +341,17 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 }
 
 func (m *Model) homeKey(key string) tea.Cmd {
+	if key == "f5" {
+		return loadModes(m.address)
+	}
+	if key == "q" {
+		return tea.Quit
+	}
 	if len(m.modes) == 0 {
 		return nil
+	}
+	if m.menuOn {
+		return m.menuKey(key)
 	}
 	switch key {
 	case "up", "k":
@@ -281,15 +371,13 @@ func (m *Model) homeKey(key string) tea.Cmd {
 		m.editing = "code"
 		return m.code.Focus()
 	case "b":
-		if m.modes[m.mode].ID == table.LandlordMode {
-			m.bots = !m.bots
-			if m.bots {
-				m.seats = 3
-			}
-		}
+		m.bots = true
+		return m.create()
 	case "c":
 		return m.create()
-	case "enter", "j":
+	case "enter":
+		m.menuOn = true
+	case "j":
 		if strings.TrimSpace(m.code.Value()) != "" {
 			return m.join()
 		}
@@ -302,6 +390,7 @@ func (m *Model) homeKey(key string) tea.Cmd {
 			if index < len(m.modes) {
 				m.mode = index
 				m.fixSeats()
+				m.menuOn = true
 			}
 		}
 	}
@@ -328,10 +417,7 @@ func (m *Model) roomKey(key string) tea.Cmd {
 		m.chatOn = true
 		return m.chat.Focus()
 	case "esc", "q", "delete":
-		m.closeRoom()
-		m.page = homeScreen
-		m.status = "已返回模式选择"
-		return nil
+		return m.leave()
 	}
 	return nil
 }
@@ -341,28 +427,24 @@ func (m *Model) gameKey(key string) tea.Cmd {
 		m.chatOn = true
 		return m.chat.Focus()
 	}
-	if key == "delete" || key == "esc" {
-		m.closeRoom()
-		m.page = homeScreen
-		m.game = nil
-		m.status = "已返回模式选择"
+	if key == "delete" {
+		return m.leave()
+	}
+	if key == "f2" {
+		return m.rematch()
+	}
+	if m.reconnecting {
+		m.status = "正在恢复连接，请稍候"
+		return nil
+	}
+	if time.Now().Unix() < m.pauseUntil {
+		m.status = "质疑结果公示中，请稍候"
 		return nil
 	}
 	if m.control == nil || m.api == nil {
 		return nil
 	}
-	result := m.control.Key(m.controllerSnapshot(), key)
-	if result.Status != "" {
-		m.status = result.Status
-	}
-	if len(result.Action) > 0 {
-		client := m.api
-		payload := append(json.RawMessage(nil), result.Action...)
-		return func() tea.Msg {
-			return actionSent{err: client.Send(map[string]any{"type": "action", "action": payload})}
-		}
-	}
-	return nil
+	return m.submit(m.control.Key(m.controllerSnapshot(), key))
 }
 
 func (m *Model) controllerSnapshot() modeui.Snapshot {
@@ -375,17 +457,31 @@ func (m *Model) create() tea.Cmd {
 	}
 	info := m.modes[m.mode]
 	seats, bots := m.seats, 0
-	if m.bots && info.ID == table.LandlordMode {
-		seats, bots = 3, 2
+	if m.bots {
+		bots = seats - 1
 	}
-	player := table.Player{ID: newID(), Name: strings.TrimSpace(m.name.Value())}
+	identity, err := profile.Load(m.address, strings.TrimSpace(m.name.Value()))
+	if err != nil {
+		m.status = "身份保存失败：" + err.Error()
+		return nil
+	}
+	player := table.Player{ID: identity.ID, Name: strings.TrimSpace(m.name.Value())}
 	client := netclient.New(m.address)
+	client.Identity(identity.ID, identity.Token)
 	m.player = player
+	m.pending = true
+	options, _ := json.Marshal(m.settings[info.ID])
 	m.status = "正在创建房间…"
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		room, err := client.CreateRoom(ctx, info.ID, seats, bots, player)
+		room, err := client.CreateRoom(ctx, info.ID, seats, bots, player, options)
+		if err == nil && bots > 0 {
+			room, err = client.SetReady(ctx, room.Code, player.ID, true)
+			if err == nil {
+				room, err = client.StartRoom(ctx, room.Code)
+			}
+		}
 		if err == nil {
 			err = client.Connect(context.Background(), room.Code, player.ID)
 		}
@@ -397,10 +493,17 @@ func (m *Model) join() tea.Cmd {
 	if !m.nameReady() {
 		return nil
 	}
-	player := table.Player{ID: newID(), Name: strings.TrimSpace(m.name.Value())}
+	identity, err := profile.Load(m.address, strings.TrimSpace(m.name.Value()))
+	if err != nil {
+		m.status = "身份保存失败：" + err.Error()
+		return nil
+	}
+	player := table.Player{ID: identity.ID, Name: strings.TrimSpace(m.name.Value())}
 	code := strings.ToUpper(strings.TrimSpace(m.code.Value()))
 	client := netclient.New(m.address)
+	client.Identity(identity.ID, identity.Token)
 	m.player = player
+	m.pending = true
 	m.status = "正在加入房间…"
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -453,9 +556,7 @@ func (m *Model) fixSeats() {
 	if m.seats < item.MinSeats || m.seats > item.MaxSeats {
 		m.seats = item.MaxSeats
 	}
-	if item.ID != table.LandlordMode {
-		m.bots = false
-	}
+	m.bots = false
 }
 
 func (m *Model) setSeats(value int) {
@@ -479,13 +580,24 @@ func (m *Model) View() tea.View {
 	case gameScreen:
 		content = m.gameView()
 	}
+	if m.optionsOn {
+		content = m.optionsView()
+	} else if m.overlay != "" {
+		content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.overlay+"\n\nEsc / Enter 返回")
+	}
 	v := tea.NewView(content)
 	v.AltScreen = true
 	v.WindowTitle = "牌桌 Card Table"
+	if m.page == gameScreen && m.overlay == "" {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
 	return v
 }
 
 func (m *Model) homeView() string {
+	if m.menuOn {
+		return m.modeLobbyView()
+	}
 	title := lipgloss.NewStyle().Foreground(lipgloss.Color("#E9B44C")).Bold(true).Render("♟ 牌桌 / CARD TABLE")
 	intro := muted.Render("独立规则引擎 · 终端实时牌桌")
 	var rows []string
@@ -503,10 +615,15 @@ func (m *Model) homeView() string {
 		item = m.modes[m.mode]
 	}
 	settings := fmt.Sprintf("座位  %d / %d     玩家  %s     房间  %s", m.seats, item.MaxSeats, display(m.name.Value(), "玩家 1"), display(strings.ToUpper(m.code.Value()), "未填写"))
-	if m.bots {
-		settings += "    Sunjiajia ×2"
+	if m.editing == "name" {
+		settings = m.name.View()
+	} else if m.editing != "" {
+		settings = m.code.View()
 	}
-	keys := "↑/↓ 选模式   ←/→ 选座位   E 改名   R 填房间号\nB 斗地主人机训练   C 创建房间   J 加入房间   Q 退出"
+	if m.bots {
+		settings += fmt.Sprintf("    Sunjiajia ×%d", m.seats-1)
+	}
+	keys := "↑/↓ 选模式 · 1–8 / Enter 进入 · E 改名\nM 声音 · F5 重连服务 · Q 退出"
 	content := lipgloss.JoinVertical(lipgloss.Center, title, intro, "", menu, settings, "", statusStyle.Render(m.status), muted.Render(keys))
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
@@ -554,14 +671,22 @@ func (m *Model) gameView() string {
 	}
 	view := m.control.View(m.controllerSnapshot())
 	header := titleStyle.Render(fmt.Sprintf("牌桌  /  %s  /  房间 %s", m.room.Mode, m.room.Code))
-	help := muted.Render("/ 聊天   Del 或 Esc 返回模式选择   Ctrl+C 退出")
+	help := muted.Render("/ 聊天 · Esc 取消选择 · Del 离桌 · F1 规则 · F2 再来一局 · M 声音")
 	chat := ""
 	if m.chatOn {
 		chat = "\n" + m.chat.View() + "\n" + muted.Render("Enter 发送 · Esc 关闭聊天")
 	} else if len(m.chatLog) > 0 {
 		chat = "\n" + muted.Render(strings.Join(m.chatLog, "\n"))
 	}
-	return lipgloss.JoinVertical(lipgloss.Center, header, "", view, "", statusStyle.Render(m.status), help, chat)
+	status := m.status
+	if remaining := m.pauseUntil - time.Now().Unix(); remaining > 0 {
+		stage := "枪决结果"
+		if remaining > 5 {
+			stage = "亮牌公示"
+		}
+		status = fmt.Sprintf("%s · %d 秒后继续", stage, remaining)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", view, "", statusStyle.Render(status), help, chat)
 }
 
 func loadModes(address string) tea.Cmd {

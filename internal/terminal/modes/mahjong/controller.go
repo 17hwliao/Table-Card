@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+
 	game "github.com/17hwliao/table-card-independent/internal/mahjong"
 	"github.com/17hwliao/table-card-independent/internal/table"
 	"github.com/17hwliao/table-card-independent/internal/terminal/ui"
@@ -31,50 +33,53 @@ func (c *Controller) View(s ui.Snapshot) string {
 	if c.selected == nil {
 		c.selected = make(map[int]bool)
 	}
-	width := s.Width
-	if width < 60 {
-		width = 60
-	}
+	width := min(max(s.Width-4, 58), 116)
+	compact := (s.Height > 0 && s.Height < 36) || s.Width < 90
 	var b strings.Builder
-	line := strings.Repeat("━", min(width-2, 76))
-	fmt.Fprintf(&b, "🀄 四川麻将 · 血战到底    第 %d 局    牌墙 %d 张\n%s\n", state.Round, state.Wall, line)
-
+	fmt.Fprintf(&b, "🀄 四川麻将 · 血战到底  第 %d 局  牌墙 %d 张  底分 %d / 封顶 %s\n", state.Round, state.Wall, state.Options.BaseScore, capText(state.Options.FanCap))
 	self := seatOf(state, s.PlayerID)
 	if self < 0 {
 		self = 0
 	}
-	for offset := 2; offset >= 1; offset-- {
-		idx := (self + offset) % len(state.Players)
-		b.WriteString(c.renderSeat(state, idx, offset, width-4))
-		b.WriteByte('\n')
-	}
-	b.WriteString(line)
+	side := max(16, (width-32)/2)
+	middle := width - 2*side
+	top := c.seatPanel(state, (self+2)%4, width-2, compact)
+	b.WriteString(lipgloss.PlaceHorizontal(width, lipgloss.Center, top))
 	b.WriteByte('\n')
+	center := "等待出牌"
 	if state.LastDiscard != nil {
 		who := "玩家"
 		if state.Discarder >= 0 && state.Discarder < len(state.Players) {
 			who = state.Players[state.Discarder].Name
 		}
-		fmt.Fprintf(&b, "  ◆ 最新出牌  %s → %s\n", who, tileName(*state.LastDiscard))
-	} else {
-		b.WriteString("  ◆ 最新出牌  等待第一张牌\n")
+		center = who + " 打出\n" + tileCard(*state.LastDiscard, false, false)
 	}
-	fmt.Fprintf(&b, "  状态：%s\n", phaseLabel(state.Phase))
-	if state.Message != "" {
-		fmt.Fprintf(&b, "  %s\n", state.Message)
+	centerHeight := 8
+	if compact {
+		centerHeight = 5
 	}
-	for offset := 3; offset >= 3; offset-- {
-		idx := (self + offset) % len(state.Players)
-		b.WriteString(c.renderSeat(state, idx, offset, width-4))
-		b.WriteByte('\n')
-	}
-	fmt.Fprintf(&b, "  你：%s\n", c.renderSelf(state, self))
-	b.WriteString("  手牌：\n")
-	b.WriteString(c.renderHand(state, width-4))
+	tableCenter := lipgloss.NewStyle().Width(middle).Height(centerHeight).Align(lipgloss.Center, lipgloss.Center).Render(center)
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Center, c.seatPanel(state, (self+3)%4, side, compact), tableCenter, c.seatPanel(state, (self+1)%4, side, compact)))
 	b.WriteByte('\n')
-	b.WriteString("  操作：")
-	b.WriteString(c.controls(state))
-	return b.String()
+	b.WriteString(lipgloss.PlaceHorizontal(width, lipgloss.Center, c.seatPanel(state, self, width-2, compact)))
+	b.WriteByte('\n')
+	if compact {
+		b.WriteString(c.compactHand(state, width))
+	} else {
+		b.WriteString(c.renderHand(state, width))
+	}
+	b.WriteByte('\n')
+	fmt.Fprintf(&b, "%s · %s\n", phaseLabel(state.Phase), state.Message)
+	if state.LastWinFan > 0 {
+		fmt.Fprintf(&b, "最近胡牌结算：%d 番\n", state.LastWinFan)
+	}
+	if state.Phase == "turn" && state.TurnPlayer != s.PlayerID {
+		b.WriteString("等待当前玩家出牌")
+	} else {
+		b.WriteString(c.controls(state))
+	}
+	b.WriteString(" · Esc 取消选择 · Del 离桌")
+	return lipgloss.NewStyle().Width(width).Render(b.String())
 }
 
 func (c *Controller) Key(s ui.Snapshot, key string) ui.Result {
@@ -85,13 +90,23 @@ func (c *Controller) Key(s ui.Snapshot, key string) ui.Result {
 	if c.selected == nil {
 		c.selected = make(map[int]bool)
 	}
-	k := strings.ToLower(strings.TrimSpace(key))
+	k := strings.ToLower(key)
+	if k == "esc" || k == "escape" {
+		c.Reset()
+		return ui.Result{Handled: true, Status: "已取消选牌"}
+	}
+	if c.cursor >= len(state.Hand) {
+		c.cursor = max(0, len(state.Hand)-1)
+	}
 	self := seatOf(state, s.PlayerID)
 	if self < 0 {
 		return ui.Result{Handled: false}
 	}
 	switch state.Phase {
 	case "exchange":
+		if state.ExchangeReady {
+			return ui.Result{Handled: true, Status: "已提交换牌，等待其他玩家"}
+		}
 		if k == "right" || k == "l" {
 			c.moveCursor(len(state.Hand), 1)
 			return ui.Result{Handled: true, Status: fmt.Sprintf("光标：第 %d 张", c.cursor+1)}
@@ -102,12 +117,12 @@ func (c *Controller) Key(s ui.Snapshot, key string) ui.Result {
 		}
 		if k == "space" || k == " " {
 			if c.cursor < len(state.Hand) {
-				c.selected[c.cursor] = !c.selected[c.cursor]
+				c.toggle(c.cursor)
 			}
 			return ui.Result{Handled: true, Status: fmt.Sprintf("已选 %d 张换牌；需选同花色 3 张", len(c.selected))}
 		}
 		if n, yes := keyIndex(k); yes && n < len(state.Hand) {
-			c.selected[n] = !c.selected[n]
+			c.toggle(n)
 			c.cursor = n
 			return ui.Result{Handled: true, Status: fmt.Sprintf("已选 %d 张换牌；需选同花色 3 张", len(c.selected))}
 		}
@@ -145,23 +160,38 @@ func (c *Controller) Key(s ui.Snapshot, key string) ui.Result {
 		}
 		if n, yes := keyIndex(k); yes && n < len(state.Hand) && state.HasDrawn {
 			c.cursor = n
-			t := state.Hand[n]
-			return action(map[string]any{"type": "discard", "suit": t.Suit, "rank": t.Rank}, "打出 "+tileName(t))
+			return ui.Result{Handled: true, Status: "已选 " + tileName(state.Hand[n]) + "，按 Enter 出牌"}
 		}
 		if k == "z" && state.CanHu {
 			return action(map[string]string{"type": "hu"}, "申報自摸")
 		}
-		if k == "g" {
-			if n, yes := matchingAddGang(state.Hand, state.Players[self].Melds); yes {
-				t := state.Hand[n]
-				return action(map[string]any{"type": "add_gang", "suit": t.Suit, "rank": t.Rank}, "申報補杠")
+		if k == "g" && state.CanAddGang {
+			for offset := 0; offset < len(state.Hand); offset++ {
+				t := state.Hand[(c.cursor+offset)%len(state.Hand)]
+				if int(t.Suit) == state.Players[self].MissingSuit {
+					continue
+				}
+				if _, yes := matchingAddGang([]game.Tile{t}, state.Players[self].Melds); yes {
+					return action(map[string]any{"type": "add_gang", "suit": t.Suit, "rank": t.Rank}, "申报补杠")
+				}
 			}
 			return ui.Result{Handled: true, Status: "当前没有可补杠的牌"}
 		}
-		if k == "b" {
-			if n, yes := matchingGang(state.Hand); yes {
-				t := state.Hand[n]
-				return action(map[string]any{"type": "gang", "suit": t.Suit, "rank": t.Rank}, "申報暗杠")
+		if k == "b" && state.HasDrawn && state.Wall > 0 {
+			for offset := 0; offset < len(state.Hand); offset++ {
+				t := state.Hand[(c.cursor+offset)%len(state.Hand)]
+				if int(t.Suit) == state.Players[self].MissingSuit {
+					continue
+				}
+				count := 0
+				for _, other := range state.Hand {
+					if t == other {
+						count++
+					}
+				}
+				if count == 4 {
+					return action(map[string]any{"type": "gang", "suit": t.Suit, "rank": t.Rank}, "申报暗杠")
+				}
 			}
 			return ui.Result{Handled: true, Status: "当前没有可暗杠的四张牌"}
 		}
@@ -175,7 +205,7 @@ func (c *Controller) Key(s ui.Snapshot, key string) ui.Result {
 		if k == "g" && has(state.ClaimOptions, "gang") {
 			return action(map[string]string{"type": "claim", "claim": "gang"}, "选择杠牌")
 		}
-		if k == "n" || k == " " {
+		if (k == "n" || k == " " || k == "space") && len(state.ClaimOptions) > 0 {
 			return action(map[string]string{"type": "claim", "claim": "pass"}, "选择过牌")
 		}
 	case "finished":
@@ -185,7 +215,7 @@ func (c *Controller) Key(s ui.Snapshot, key string) ui.Result {
 	}
 	if k == "esc" || k == "escape" {
 		c.Reset()
-		return ui.Result{Handled: true, Exit: true, Status: "返回游戏大厅"}
+		return ui.Result{Handled: true, Status: "已取消选牌"}
 	}
 	return ui.Result{Handled: false}
 }
@@ -227,34 +257,84 @@ func (c *Controller) renderSelf(s game.Snapshot, self int) string {
 
 func (c *Controller) renderHand(s game.Snapshot, width int) string {
 	if len(s.Hand) == 0 {
-		return "    （手牌已收起）"
+		return "（手牌已收起）"
 	}
+	perRow := max(1, width/7)
 	var rows []string
-	line := "    "
-	for i, tile := range s.Hand {
-		mark := " "
-		if c.selected[i] {
-			mark = "*"
+	for start := 0; start < len(s.Hand); start += perRow {
+		var tiles []string
+		for i := start; i < min(start+perRow, len(s.Hand)); i++ {
+			tiles = append(tiles, tileCard(s.Hand[i], c.selected[i], i == c.cursor)+fmt.Sprintf("\n  %02d", i+1))
 		}
-		cursor := " "
-		if i == c.cursor {
-			cursor = ">"
-		}
-		card := fmt.Sprintf("%s[%02d]%s%s", cursor, i+1, tileName(tile), mark)
-		candidate := line + "  " + card
-		if len([]rune(candidate)) > width && line != "    " {
-			rows = append(rows, line)
-			line = "    " + card
-		} else {
-			line = candidate
-		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, tiles...))
 	}
-	return strings.Join(append(rows, line), "\n")
+	return strings.Join(rows, "\n")
+}
+
+func (c *Controller) toggle(i int) {
+	if c.selected[i] {
+		delete(c.selected, i)
+	} else {
+		c.selected[i] = true
+	}
+}
+func capText(fan int) string {
+	if fan == 0 {
+		return "不限"
+	}
+	return fmt.Sprint(fan)
+}
+func tileCard(t game.Tile, selected, cursor bool) string {
+	color := lipgloss.Color("252")
+	if t.Suit < 3 {
+		color = lipgloss.Color([]string{"203", "81", "114"}[t.Suit])
+	}
+	border := lipgloss.Color("240")
+	if cursor {
+		border = lipgloss.Color("220")
+	}
+	if selected {
+		border = lipgloss.Color("117")
+	}
+	glyph := "□"
+	if t.Suit < 3 && t.Rank >= 1 && t.Rank <= 9 {
+		glyph = string(rune([]int{0x1F007, 0x1F019, 0x1F010}[t.Suit] + int(t.Rank) - 1))
+	}
+	label := glyph + "\n" + tileName(t)
+	return lipgloss.NewStyle().Width(5).Align(lipgloss.Center).Foreground(color).Border(lipgloss.RoundedBorder()).BorderForeground(border).Render(label)
+}
+func (c *Controller) seatPanel(s game.Snapshot, seat, width int, compact bool) string {
+	p := s.Players[seat]
+	wind := []string{"东", "南", "西", "北"}[(seat-s.Dealer+4)%4]
+	marker := ""
+	if s.Phase == "turn" && s.Turn == seat {
+		marker = "▶ "
+	}
+	if p.Winner {
+		marker = "✓ 已胡 "
+	}
+	title := fmt.Sprintf("%s%s%s %s %+d分", marker, wind, dealerMark(seat, s.Dealer), p.Name, p.Score)
+	details := fmt.Sprintf("缺%s · 手牌%d · %s", suitName(p.MissingSuit), p.HandCount, meldText(p.Melds))
+	content := title + "\n" + details + "\n弃牌 " + recentText(p.Discards)
+	if compact {
+		lines := []string{title, details, "弃牌 " + recentText(p.Discards)}
+		if width >= 50 {
+			lines = []string{title + " · " + details, "弃牌 " + recentText(p.Discards)}
+		}
+		for i := range lines {
+			lines[i] = fit(lines[i], width)
+		}
+		return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
+	}
+	return lipgloss.NewStyle().Width(max(12, width-2)).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("238")).Render(content)
 }
 
 func (c *Controller) controls(s game.Snapshot) string {
 	switch s.Phase {
 	case "exchange":
+		if s.ExchangeReady {
+			return "换牌已提交，等待其他玩家"
+		}
 		return "数字选择牌，或 ←/→ 移动、Space 选牌 · Enter 确认三张同花色换三张"
 	case "missing":
 		return "1 缺万 · 2 缺筒 · 3 缺条"
@@ -265,14 +345,16 @@ func (c *Controller) controls(s game.Snapshot) string {
 		if !s.HasDrawn {
 			return "D 摸牌"
 		}
-		choices := []string{"数字键出牌", "←/→ 选牌后 Enter 出牌"}
+		choices := []string{"数字键或 ←/→ 选牌", "Enter 确认出牌"}
 		if s.CanHu {
 			choices = append(choices, "Z 自摸")
 		}
 		if s.CanAddGang {
 			choices = append(choices, "G 补杠")
 		}
-		choices = append(choices, "B 暗杠")
+		if s.CanGang {
+			choices = append(choices, "B 暗杠")
+		}
 		return strings.Join(choices, " · ")
 	case "claim":
 		return claimControls(s.ClaimOptions, false)
@@ -487,9 +569,46 @@ func phaseLabel(phase string) string {
 }
 
 func fit(text string, width int) string {
-	if width <= 0 || len([]rune(text)) <= width {
+	if width <= 0 || lipgloss.Width(text) <= width {
 		return text
 	}
-	runes := []rune(text)
-	return string(runes[:max(0, width-1)]) + "…"
+	out := ""
+	for _, r := range text {
+		if lipgloss.Width(out+string(r))+1 > width {
+			break
+		}
+		out += string(r)
+	}
+	return out + "…"
+}
+
+func (c *Controller) compactHand(s game.Snapshot, width int) string {
+	var rows []string
+	var row []string
+	perRow := max(1, width/8)
+	for i, tile := range s.Hand {
+		marker := " "
+		if c.selected[i] {
+			marker = "*"
+		}
+		if i == c.cursor {
+			marker = ">"
+		}
+		label := fmt.Sprintf("%s%02d:%s", marker, i+1, tileName(tile))
+		style := lipgloss.NewStyle().Width(8)
+		if i == c.cursor {
+			style = style.Foreground(lipgloss.Color("220"))
+		} else if c.selected[i] {
+			style = style.Foreground(lipgloss.Color("117"))
+		}
+		row = append(row, style.Render(label))
+		if len(row) == perRow {
+			rows = append(rows, strings.Join(row, ""))
+			row = nil
+		}
+	}
+	if len(row) > 0 {
+		rows = append(rows, strings.Join(row, ""))
+	}
+	return strings.Join(rows, "\n")
 }

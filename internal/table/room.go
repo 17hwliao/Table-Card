@@ -2,6 +2,7 @@ package table
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -44,14 +45,16 @@ type Player struct {
 }
 
 type Snapshot struct {
-	Code    string    `json:"code"`
-	Mode    Mode      `json:"mode"`
-	Phase   RoomPhase `json:"phase"`
-	Seats   int       `json:"seats"`
-	Players []Player  `json:"players"`
+	Options json.RawMessage `json:"options,omitempty"`
+	Code    string          `json:"code"`
+	Mode    Mode            `json:"mode"`
+	Phase   RoomPhase       `json:"phase"`
+	Seats   int             `json:"seats"`
+	Players []Player        `json:"players"`
 }
 
 type Room struct {
+	options json.RawMessage
 	mu      sync.RWMutex
 	code    string
 	mode    Mode
@@ -182,9 +185,40 @@ func (r *Room) Snapshot() Snapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return Snapshot{
-		Code: r.code, Mode: r.mode, Phase: r.phase, Seats: r.seats,
+		Options: append(json.RawMessage(nil), r.options...),
+		Code:    r.code, Mode: r.mode, Phase: r.phase, Seats: r.seats,
 		Players: append([]Player(nil), r.players...),
 	}
+}
+
+func (m *RoomManager) List() []*Room {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	rooms := make([]*Room, 0, len(m.rooms))
+	for _, room := range m.rooms {
+		rooms = append(rooms, room)
+	}
+	return rooms
+}
+
+func (r *Room) SetOptions(options json.RawMessage) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.options = append(json.RawMessage(nil), options...)
+}
+
+// TakeOver preserves the seat and hand while transferring control to a bot.
+func (r *Room) TakeOver(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.players {
+		if r.players[i].ID == id {
+			r.players[i].Bot = true
+			r.players[i].Ready = true
+			return nil
+		}
+	}
+	return ErrPlayerMissing
 }
 
 func newRoomCode() (string, error) {

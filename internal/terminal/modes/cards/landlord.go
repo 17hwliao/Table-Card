@@ -27,11 +27,14 @@ type landlordView struct {
 	} `json:"trick"`
 }
 
-type Landlord struct{ selected map[int]bool }
+type Landlord struct {
+	selected map[int]bool
+	cursor   int
+}
 
 func NewLandlord() *Landlord       { return &Landlord{} }
 func (*Landlord) Mode() table.Mode { return table.LandlordMode }
-func (c *Landlord) Reset()         { c.selected = make(map[int]bool) }
+func (c *Landlord) Reset()         { c.selected = make(map[int]bool); c.cursor = 0 }
 
 func (c *Landlord) View(s ui.Snapshot) string {
 	var v landlordView
@@ -83,22 +86,20 @@ func (c *Landlord) View(s ui.Snapshot) string {
 			fmt.Fprintf(&b, "底牌：%s\n", strings.Join(parts, " "))
 		}
 	}
-	fmt.Fprintf(&b, "\n%s你的手牌（数字切换选择）%s\n", gold, reset)
+	fmt.Fprintf(&b, "\n%s你的手牌 · ← → 移动 / Space 选中%s\n", gold, reset)
+	labels := make([]string, len(v.Hand))
+	colors := make([]string, len(v.Hand))
 	for i, card := range v.Hand {
-		mark := " "
-		if c.selected[i] {
-			mark = "*"
-		}
-		fmt.Fprintf(&b, "%s%2d%s %s   ", mark, i+1, map[bool]string{true: "*", false: " "}[c.selected[i]], card.String())
-		if (i+1)%8 == 0 {
-			fmt.Fprintln(&b)
+		labels[i] = card.String()
+		if card.Suit == gamecards.Heart || card.Suit == gamecards.Diamond {
+			colors[i] = red
 		}
 	}
-	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, handFaces(labels, colors, c.selected, c.cursor, s.Width))
 	if s.PlayerID != v.TurnPlayer {
 		fmt.Fprintf(&b, "\n%s等待 %s 操作%s\n", muted, playerName(s, v.TurnPlayer), reset)
 	}
-	fmt.Fprintln(&b, "操作：叫分 1/2/3 · 不叫 P · 选择手牌 1-9 · Enter 出牌 · P 过牌 · Esc 清空选择")
+	fmt.Fprintln(&b, "操作：叫分 1/2/3 · 不叫 P · ←/→ 移动 · Space 选牌 · 1-9 快选 · Enter 出牌 · P 过牌 · Esc 清空选择")
 	return b.String()
 }
 
@@ -109,6 +110,9 @@ func (c *Landlord) Key(s ui.Snapshot, key string) ui.Result {
 	}
 	if c.selected == nil {
 		c.Reset()
+	}
+	if key == " " {
+		key = "space"
 	}
 	key = strings.ToLower(strings.TrimSpace(key))
 	if key == "esc" || key == "escape" {
@@ -129,6 +133,25 @@ func (c *Landlord) Key(s ui.Snapshot, key string) ui.Result {
 	}
 	if v.Phase != 1 {
 		return ui.Result{}
+	}
+	if len(v.Hand) > 0 {
+		switch key {
+		case "left", "h":
+			c.cursor = (c.cursor - 1 + len(v.Hand)) % len(v.Hand)
+			return ui.Result{Handled: true}
+		case "right", "l":
+			c.cursor = (c.cursor + 1) % len(v.Hand)
+			return ui.Result{Handled: true}
+		case "home":
+			c.cursor = 0
+			return ui.Result{Handled: true}
+		case "end":
+			c.cursor = len(v.Hand) - 1
+			return ui.Result{Handled: true}
+		case "space":
+			c.cursor = min(c.cursor, len(v.Hand)-1)
+			key = strconv.Itoa(c.cursor + 1)
+		}
 	}
 	if n, err := strconv.Atoi(key); err == nil && n >= 1 && n <= len(v.Hand) {
 		if c.selected[n-1] {

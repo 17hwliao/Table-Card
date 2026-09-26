@@ -125,16 +125,13 @@ func (g *Game) Move(playerID string, from, to Point) (Snapshot, error) {
 		g.turn = Red
 	}
 	if !hasLegalMove(g.board, g.turn) {
-		if inCheck(g.board, g.turn) {
-			winnerSide := Red
-			if g.turn == Red {
-				winnerSide = Black
-			}
-			g.winner = g.players[int(winnerSide)-1].ID
-		} else {
-			g.draw = true
+		winnerSide := Red
+		if g.turn == Red {
+			winnerSide = Black
 		}
+		g.winner = g.players[int(winnerSide)-1].ID
 	}
+
 	return g.snapshotLocked(), nil
 }
 
@@ -336,6 +333,9 @@ func (e *Engine) Apply(playerID string, payload json.RawMessage) (any, error) {
 	}
 	if err := json.Unmarshal(payload, &action); err != nil {
 		return nil, err
+	}
+	if action.Type == "resign" {
+		return e.resign(playerID)
 	}
 	if action.Type != "move" {
 		return nil, errors.New("中国象棋操作类型必须是 move")

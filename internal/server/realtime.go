@@ -55,6 +55,24 @@ func (h *roomHub) remove(peer *socketPeer) {
 	}
 }
 
+func (h *roomHub) disconnectPlayer(roomCode, playerID string) {
+	h.mu.Lock()
+	var peers []*socketPeer
+	for peer := range h.peers[roomCode] {
+		if peer.playerID == playerID {
+			delete(h.peers[roomCode], peer)
+			peers = append(peers, peer)
+		}
+	}
+	if len(h.peers[roomCode]) == 0 {
+		delete(h.peers, roomCode)
+	}
+	h.mu.Unlock()
+	for _, peer := range peers {
+		_ = peer.conn.CloseNow()
+	}
+}
+
 func (h *roomHub) roomPeers(roomCode string) []*socketPeer {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -94,6 +112,9 @@ func (s *Server) roomWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	playerID := r.URL.Query().Get("playerId")
+	if !authorize(w, r, playerID) {
+		return
+	}
 	snapshot := room.Snapshot()
 	if !isHumanRoomPlayer(snapshot, playerID) {
 		http.Error(w, "玩家不在这个房间中", http.StatusForbidden)
@@ -117,7 +138,9 @@ func (s *Server) roomWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.hub.remove(peer)
 		_ = conn.Close(websocket.StatusNormalClosure, "")
 	}()
+	s.opMu.Lock()
 	s.sendRoomState(peer, room)
+	s.opMu.Unlock()
 
 	for {
 		messageType, payload, err := conn.Read(context.Background())
@@ -140,6 +163,10 @@ func (s *Server) roomWebSocket(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSocketMessage(peer *socketPeer, room *table.Room, request socketRequest) {
 	switch request.Type {
 	case "chat":
+		if !isHumanRoomPlayer(room.Snapshot(), peer.playerID) {
+			_ = peer.send(map[string]string{"type": "error", "error": "你已离开此房间"})
+			return
+		}
 		text := strings.TrimSpace(request.Text)
 		if text == "" || utf8.RuneCountInString(text) > 300 {
 			_ = peer.send(map[string]string{"type": "error", "error": "聊天内容需要为 1 到 300 个字符"})
@@ -149,6 +176,8 @@ func (s *Server) handleSocketMessage(peer *socketPeer, room *table.Room, request
 			"type": "chat", "playerId": peer.playerID, "name": peer.name, "text": text,
 		})
 	case "action":
+		s.opMu.Lock()
+		defer s.opMu.Unlock()
 		if len(request.Action) == 0 || !json.Valid(request.Action) {
 			_ = peer.send(map[string]string{"type": "error", "error": "action 必须是一个 JSON 对象"})
 			return
@@ -158,7 +187,11 @@ func (s *Server) handleSocketMessage(peer *socketPeer, room *table.Room, request
 			_ = peer.send(map[string]string{"type": "error", "error": "该房间的对局尚未开始"})
 			return
 		}
-		if _, err := engine.Apply(peer.playerID, request.Action); err != nil {
+		if !isHumanRoomPlayer(room.Snapshot(), peer.playerID) {
+			_ = peer.send(map[string]string{"type": "error", "error": "你已离开此房间"})
+			return
+		}
+		if _, err := s.applyLocked(peer.roomCode, room, engine, peer.playerID, request.Action); err != nil {
 			_ = peer.send(map[string]string{"type": "error", "error": err.Error()})
 			return
 		}
@@ -170,7 +203,7 @@ func (s *Server) handleSocketMessage(peer *socketPeer, room *table.Room, request
 
 func (s *Server) sendRoomState(peer *socketPeer, room *table.Room) {
 	if engine, ok := s.findEngine(peer.roomCode); ok {
-		_ = peer.send(map[string]any{"type": "state", "room": room.Snapshot(), "game": engine.View(peer.playerID)})
+		_ = peer.send(s.stateEnvelope(room, engine, peer.playerID))
 		return
 	}
 	_ = peer.send(map[string]any{"type": "room", "data": room.Snapshot()})
@@ -184,6 +217,6 @@ func (s *Server) broadcastRoom(room *table.Room) {
 
 func (s *Server) broadcastGameState(roomCode string, room *table.Room, engine games.Engine) {
 	for _, peer := range s.hub.roomPeers(roomCode) {
-		_ = peer.send(map[string]any{"type": "state", "room": room.Snapshot(), "game": engine.View(peer.playerID)})
+		_ = peer.send(s.stateEnvelope(room, engine, peer.playerID))
 	}
 }

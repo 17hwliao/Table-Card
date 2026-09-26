@@ -13,7 +13,9 @@ func main() {
 	name := flag.String("name", "玩家 1", "默认玩家名称")
 	flag.Parse()
 
-	program := tea.NewProgram(app.New(*server, *name))
+	model := app.New(*server, *name)
+	defer model.Close()
+	program := tea.NewProgram(model)
 	if _, err := program.Run(); err != nil {
 		log.Fatal(err)
 	}

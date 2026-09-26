@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"math/rand/v2"
 
 	"github.com/17hwliao/table-card-independent/internal/liarbar"
 	"github.com/17hwliao/table-card-independent/internal/table"
@@ -69,4 +70,36 @@ func decodeAction(payload json.RawMessage, target any) error {
 		return err
 	}
 	return nil
+}
+
+// BotAction uses only this player's hand and public declarations, never hidden cards.
+func (e *liarBarEngine) BotAction(playerID string) json.RawMessage {
+	v := e.game.Snapshot(playerID)
+	if v.Phase != liarbar.RoundActive || v.Turn < 0 || v.Turn >= len(v.Players) || v.Players[v.Turn].ID != playerID {
+		return nil
+	}
+	var action any
+	honest := []uint8{}
+	for _, card := range v.Hand {
+		if card.Rank == v.Target || card.Rank == liarbar.Joker {
+			honest = append(honest, card.ID)
+		}
+	}
+	if v.Pending != nil && (len(v.Hand) == 0 || (len(honest) == 0 && rand.IntN(2) == 0) || (v.Pending.Count == 3 && rand.IntN(3) == 0)) {
+		action = map[string]any{"type": "challenge"}
+	} else {
+		ids := honest
+		if len(ids) == 0 && len(v.Hand) > 0 {
+			ids = []uint8{v.Hand[0].ID}
+		}
+		if len(ids) > 2 {
+			ids = ids[:2]
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		action = map[string]any{"type": "play", "cardIds": ids}
+	}
+	data, _ := json.Marshal(action)
+	return data
 }

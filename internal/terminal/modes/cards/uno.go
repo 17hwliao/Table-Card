@@ -16,6 +16,18 @@ type unoCard struct {
 	Number uint8 `json:"number"`
 }
 type unoView struct {
+	LastChallenge *struct {
+		Target   int       `json:"target"`
+		Success  bool      `json:"success"`
+		Revealed []unoCard `json:"revealed"`
+	} `json:"lastChallenge"`
+
+	OpeningColor bool `json:"openingColor"`
+	Options      struct {
+		Blitz      bool `json:"blitz"`
+		SevenZero  bool `json:"sevenZero"`
+		DoublePlay bool `json:"doublePlay"`
+	} `json:"options"`
 	Players []struct {
 		ID      string `json:"id"`
 		Name    string `json:"name"`
@@ -48,11 +60,18 @@ type UNO struct {
 	color    uint8
 	target   int
 	announce bool
+	pair     bool
 }
 
 func NewUNO() *UNO            { return &UNO{selected: -1, target: -1} }
 func (*UNO) Mode() table.Mode { return table.UNOMode }
-func (c *UNO) Reset()         { c.selected = -1; c.color = 0; c.target = -1; c.announce = false }
+func (c *UNO) Reset() {
+	c.selected = -1
+	c.color = 0
+	c.target = -1
+	c.announce = false
+	c.pair = false
+}
 
 func (c *UNO) View(s ui.Snapshot) string {
 	var v unoView
@@ -86,11 +105,26 @@ func (c *UNO) View(s ui.Snapshot) string {
 		dir = "逆时针"
 	}
 	fmt.Fprintf(&b, "\n弃牌堆顶：%s     当前颜色：%s     方向：%s\n", unoName(v.Discard), unoColor(v.Color), dir)
+	if v.OpeningColor {
+		fmt.Fprintln(&b, "开局万能牌：先手请按 R/Y/B/G 选择颜色")
+	}
 	if v.DrawPenalty > 0 {
 		fmt.Fprintf(&b, "%s累计罚牌 +%d：可叠加 +2 / +4，或按 D 承受%s\n", red, v.DrawPenalty, reset)
 	}
 	if v.PendingChallenge {
 		fmt.Fprintf(&b, "%s万能 +4 待处理：按 X 挑战，或 D 接受%s\n", gold, reset)
+	}
+	if v.LastChallenge != nil {
+		result := "挑战失败：挑战者承受累计罚牌加 2 张"
+		if v.LastChallenge.Success {
+			result = "挑战成功：出 +4 者罚摸 4 张，先前累计罚牌保留"
+		}
+		fmt.Fprintln(&b, result)
+		labels := []string{}
+		for _, card := range v.LastChallenge.Revealed {
+			labels = append(labels, unoName(card))
+		}
+		fmt.Fprintln(&b, "被挑战者亮牌："+strings.Join(labels, " · "))
 	}
 	if v.CanCatchUNO {
 		fmt.Fprintf(&b, "%s有人漏喊 UNO：按 C 抓牌%s\n", red, reset)
@@ -103,21 +137,20 @@ func (c *UNO) View(s ui.Snapshot) string {
 			fmt.Fprintln(&b, "按 N 开始下一局")
 		}
 	}
-	fmt.Fprintf(&b, "\n%s你的手牌（数字选择）%s\n", gold, reset)
+	fmt.Fprintf(&b, "\n%s你的手牌（← → 选择，Enter 出牌）%s\n", gold, reset)
 	if len(v.Hand) == 0 {
 		fmt.Fprintln(&b, "（无手牌）")
 	}
+	labels := make([]string, len(v.Hand))
+	colors := make([]string, len(v.Hand))
 	for i, card := range v.Hand {
-		mark := " "
-		if i == c.selected {
-			mark = gold + ">" + reset
-		}
-		fmt.Fprintf(&b, "%s%2d %s   ", mark, i+1, cardBox(unoName(card), i == c.selected, unoANSI(card.Color)))
-		if (i+1)%6 == 0 {
-			fmt.Fprintln(&b)
-		}
+		labels[i] = unoName(card)
+		colors[i] = unoANSI(card.Color)
 	}
-	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, handFaces(labels, colors, nil, c.selected, s.Width))
+	if c.pair {
+		fmt.Fprintln(&b, "本次出牌：同色数字双牌同出（V 取消）")
+	}
 	if c.color > 0 {
 		fmt.Fprintf(&b, "\n已选万能牌颜色：%s\n", unoColor(c.color))
 	}
@@ -129,10 +162,10 @@ func (c *UNO) View(s ui.Snapshot) string {
 	}
 	if !v.Finished {
 		if s.PlayerID == v.TurnPlayer {
-			fmt.Fprintln(&b, "轮到你：数字选牌 · Enter 出牌 · D 摸牌/接受 · K 摸牌后结束 · U 切换喊 UNO · R/G/B/Y 选万能颜色")
-			fmt.Fprintln(&b, "X 挑战 +4 · C 抓漏喊 · T 选择 7 的交换对象 · Esc 清空选择")
+			fmt.Fprintln(&b, "轮到你：← → 选牌 · Enter 出牌 · D 摸牌/接受 · K 摸牌后结束 · U 切换喊 UNO · R/G/B/Y 选万能颜色")
+			fmt.Fprintln(&b, "X 挑战 +4 · C 抓漏喊 · T 选择 7 对象 · V 双牌 · Esc 清空")
 		} else {
-			fmt.Fprintf(&b, "等待 %s 操作\n", playerName(s, v.TurnPlayer))
+			fmt.Fprintf(&b, "等待 %s 操作；同色同数字/功能可用 ← → 选牌、Enter 跳打\n", playerName(s, v.TurnPlayer))
 		}
 	}
 	return b.String()
@@ -144,6 +177,13 @@ func (c *UNO) Key(s ui.Snapshot, key string) ui.Result {
 		return ui.Result{}
 	}
 	key = strings.ToLower(strings.TrimSpace(key))
+	if v.OpeningColor && s.PlayerID == v.TurnPlayer {
+		color := map[string]int{"r": 1, "y": 2, "b": 3, "g": 4}[key]
+		if color > 0 {
+			return ui.Result{Handled: true, Action: ui.Action(map[string]any{"type": "choose_color", "color": color}), Status: "设置开局颜色"}
+		}
+	}
+
 	if key == "esc" || key == "escape" {
 		c.Reset()
 		return ui.Result{Handled: true, Status: "已清空选择"}
@@ -155,10 +195,22 @@ func (c *UNO) Key(s ui.Snapshot, key string) ui.Result {
 		}
 		return ui.Result{}
 	}
-	if s.PlayerID != v.TurnPlayer {
-		return ui.Result{}
+	if s.PlayerID != v.TurnPlayer && key != "c" {
+		if !v.Options.Blitz {
+			return ui.Result{}
+		}
+		switch key {
+		case "d", "k", "x":
+			return ui.Result{Handled: true, Status: "等待自己的回合；现在只可跳打相同牌"}
+		}
 	}
 	switch key {
+	case "v":
+		if !v.Options.DoublePlay {
+			return ui.Result{Handled: true, Status: "本桌未开启双牌同出"}
+		}
+		c.pair = !c.pair
+		return ui.Result{Handled: true}
 	case "d":
 		return ui.Result{Handled: true, Action: ui.Action(map[string]any{"type": "draw"}), Status: "摸牌 / 接受罚牌"}
 	case "k":
@@ -225,14 +277,15 @@ func (c *UNO) Key(s ui.Snapshot, key string) ui.Result {
 			return ui.Result{Handled: true, Status: "出万能牌前请按 R/G/B/Y 选择颜色"}
 		}
 		target := c.target
-		if card.Kind == 0 && card.Number == 7 && len(v.Hand) > 1 && target < 0 {
+		if card.Kind == 0 && card.Number == 7 && v.Options.SevenZero && len(v.Hand) > 1 && !(c.pair && len(v.Hand) == 2) && target < 0 {
 			return ui.Result{Handled: true, Status: "打出 7 前按 T 选择交换对象"}
 		}
 		if target < 0 {
 			target = -1
 		}
-		action := map[string]any{"type": "play", "cardId": card.ID, "color": c.color, "uno": c.announce, "target": target}
+		action := map[string]any{"type": "play", "cardId": card.ID, "color": c.color, "uno": c.announce, "target": target, "pair": c.pair}
 		c.selected = -1
+		c.pair = false
 		c.color = 0
 		c.announce = false
 		return ui.Result{Handled: true, Action: ui.Action(action), Status: "打出 " + unoName(card)}
