@@ -13,6 +13,10 @@ $escapedEntry = $entry.Replace('%', '%%')
 $content = "@echo off`r`nsetlocal`r`nchcp 65001 >nul`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$escapedEntry`" -PromptClients %*`r`nif errorlevel 1 pause`r`n"
 [IO.File]::WriteAllText($batchPath, $content, [Text.UTF8Encoding]::new($false))
 Write-Host "已创建桌面启动脚本：$batchPath"
+$testBatchPath = Join-Path $DesktopPath '牌桌本地测试.bat'
+$testContent = "@echo off`r`nsetlocal`r`nchcp 65001 >nul`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$escapedEntry`" -Clients 4 -Port 18781 %*`r`nif errorlevel 1 pause`r`n"
+[IO.File]::WriteAllText($testBatchPath, $testContent, [Text.UTF8Encoding]::new($false))
+Write-Host "已创建四人本地测试脚本：$testBatchPath"
 if ($Shortcut) {
     $shell = New-Object -ComObject WScript.Shell
     $link = $shell.CreateShortcut((Join-Path $DesktopPath '牌桌 Card Table.lnk'))

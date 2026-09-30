@@ -32,7 +32,7 @@
 # 停止脚本启动的本地服务
 ./scripts/stop-local-server.ps1 -Port 1781
 
-# 安装桌面“启动牌桌.bat”入口
+# 安装桌面“启动牌桌.bat”和“牌桌本地测试.bat”入口
 ./scripts/install-desktop-launcher.ps1
 
 # 生成发给其他 Windows 用户的便携包
@@ -40,6 +40,8 @@
 ```
 
 便携包已经包含服务端、客户端和内置音乐。接收者不需要安装 Go、Docker、Redis 或数据库，解压后双击 `start-table-card.bat` 即可开始本机游玩。
+
+桌面上的 `启动牌桌.bat` 会询问要打开几个客户端；`牌桌本地测试.bat` 会在独立的 18781 端口直接打开 4 个客户端，方便测试四人桌。测试后可用 `./scripts/stop-local-server.ps1 -Port 18781` 停止后台服务。
 
 ## 多人连接
 
