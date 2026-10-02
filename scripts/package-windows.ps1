@@ -26,10 +26,10 @@ try {
 }
 Copy-Item -LiteralPath (Join-Path $hostStage 'bin/table-card.exe') -Destination (Join-Path $clientStage 'bin/table-card.exe')
 
-foreach ($name in @('start-table-card.ps1', 'start-table-card.bat', 'join-table-card.ps1', 'join-table-card.bat', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
+foreach ($name in @('start-table-card.ps1', 'start-table-card.bat', 'start-snake.ps1', 'start-snake.bat', 'join-table-card.ps1', 'join-table-card.bat', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination (Join-Path $hostStage $name)
 }
-foreach ($name in @('join-table-card.ps1', 'join-table-card.bat', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
+foreach ($name in @('start-snake.ps1', 'start-snake.bat', 'join-table-card.ps1', 'join-table-card.bat', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination (Join-Path $clientStage $name)
 }
 foreach ($name in @('install-desktop-launcher.ps1', 'stop-local-server.ps1')) {
@@ -45,6 +45,7 @@ $hostInstructions = @'
 4. 给其他玩家发送单独的 Table-Card-Client-Windows 压缩包；他们解压后双击 join-table-card.bat。
 5. 服务端会在后台保持运行。结束后运行 .\scripts\stop-local-server.ps1 停止。
 6. 公网游玩需要玩家能访问房主的网络和 TCP 端口；本项目没有云端中继。
+7. 单机贪吃蛇双击 start-snake.bat，无需启动服务端或输入网络地址。
 
 使用者无需安装 Go、Docker 或 Redis。
 源码及许可证：https://github.com/17hwliao/Table-Card
@@ -57,6 +58,7 @@ $clientInstructions = @'
 3. 在终端大厅选择相同游戏模式，输入房主给的 6 位房间号加入。
 4. 默认端口是 1781；只输入 IP 时会自动补上该端口。
 5. 如果连接失败，确认房主正在运行服务、地址正确，且网络或防火墙允许连接。
+6. 离线玩贪吃蛇可直接双击 start-snake.bat，无需房主、网络或服务器。
 
 玩家无需安装 Go、Docker、Redis 或其他运行环境。
 源码及许可证：https://github.com/17hwliao/Table-Card

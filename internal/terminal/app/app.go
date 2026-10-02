@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/17hwliao/table-card-independent/internal/snake"
 	"github.com/17hwliao/table-card-independent/internal/table"
 	"github.com/17hwliao/table-card-independent/internal/terminal/audio"
 	"github.com/17hwliao/table-card-independent/internal/terminal/modes"
@@ -27,6 +28,7 @@ const (
 	homeScreen screen = iota
 	roomScreen
 	gameScreen
+	snakeScreen
 )
 
 type modeInfo struct {
@@ -60,36 +62,40 @@ type actionSent struct{ err error }
 type chatSent struct{ err error }
 
 type Model struct {
-	sound        *audio.Player
-	menuOn       bool
-	overlay      string
-	optionsOn    bool
-	optionIndex  int
-	settings     map[table.Mode]map[string]any
-	pending      bool
-	reconnecting bool
-	pauseUntil   int64
-	clockActive  bool
-	address      string
-	api          *netclient.Client
-	page         screen
-	modes        []modeInfo
-	mode         int
-	seats        int
-	bots         bool
-	name         textinput.Model
-	code         textinput.Model
-	editing      string
-	room         table.Snapshot
-	player       table.Player
-	game         json.RawMessage
-	control      modeui.Controller
-	width        int
-	height       int
-	status       string
-	chat         textinput.Model
-	chatOn       bool
-	chatLog      []string
+	snakeGame                  *snake.Game
+	snakeGeneration, snakeStep uint64
+	snakeStarted, snakePaused  bool
+	snakeBest                  int
+	sound                      *audio.Player
+	menuOn                     bool
+	overlay                    string
+	optionsOn                  bool
+	optionIndex                int
+	settings                   map[table.Mode]map[string]any
+	pending                    bool
+	reconnecting               bool
+	pauseUntil                 int64
+	clockActive                bool
+	address                    string
+	api                        *netclient.Client
+	page                       screen
+	modes                      []modeInfo
+	mode                       int
+	seats                      int
+	bots                       bool
+	name                       textinput.Model
+	code                       textinput.Model
+	editing                    string
+	room                       table.Snapshot
+	player                     table.Player
+	game                       json.RawMessage
+	control                    modeui.Controller
+	width                      int
+	height                     int
+	status                     string
+	chat                       textinput.Model
+	chatOn                     bool
+	chatLog                    []string
 }
 
 func New(address, playerName string) *Model {
@@ -110,13 +116,20 @@ func New(address, playerName string) *Model {
 	chat.Prompt = "聊天 › "
 	chat.CharLimit = 300
 	chat.SetWidth(50)
-	return &Model{sound: audio.New(), settings: defaultSettings(), address: address, page: homeScreen, name: name, code: code, chat: chat, seats: 2, status: "正在连接牌桌服务…", width: 90, height: 30}
+	return &Model{modes: localModes(), sound: audio.New(), settings: defaultSettings(), address: address, page: homeScreen, name: name, code: code, chat: chat, seats: 1, status: "正在连接牌桌服务… · 0 可离线玩贪吃蛇", width: 90, height: 30}
 }
 
-func (m *Model) Init() tea.Cmd { return loadModes(m.address) }
+func (m *Model) Init() tea.Cmd {
+	if m.page == snakeScreen {
+		return nil
+	}
+	return loadModes(m.address)
+}
 
 func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := message.(type) {
+	case snakeTickMsg:
+		return m, m.snakeTick(msg)
 	case clockMsg:
 		if m.needsClock() {
 			return m, clockTick()
@@ -157,14 +170,28 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case modesLoaded:
 		if msg.err != nil {
-			m.status = "连接失败：" + msg.err.Error()
+			if m.page == homeScreen {
+				m.status = "服务未连接 · 0 可离线玩贪吃蛇 · F5 重连"
+			}
 			return m, nil
 		}
-		m.modes = msg.items
+		selectedMode := m.currentMode()
+		keepSelection := m.menuOn || m.page != homeScreen
+		m.modes = append(msg.items, localModes()...)
 		if len(m.modes) > 0 {
-			m.mode = min(m.mode, len(m.modes)-1)
+			m.mode = 0
+			if keepSelection {
+				for i, item := range m.modes {
+					if item.ID == selectedMode {
+						m.mode = i
+						break
+					}
+				}
+			}
 			m.seats = m.modes[m.mode].MaxSeats
-			m.status = "已连接 · 可创建房间或输入房间号加入"
+			if m.page == homeScreen {
+				m.status = "已连接 · 可创建房间或输入房间号加入"
+			}
 		}
 		return m, nil
 	case connected:
@@ -269,6 +296,11 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 	if key == "ctrl+c" {
 		return tea.Sequence(m.leave(), tea.Quit)
 	}
+	if m.page == snakeScreen {
+		if pressed, ok := message.(tea.KeyPressMsg); ok && pressed.IsRepeat {
+			return nil
+		}
+	}
 	if m.editing != "" {
 		if key == "esc" {
 			m.name.Blur()
@@ -337,6 +369,9 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	if key == "f1" || key == "?" {
+		if m.page == snakeScreen {
+			m.pauseSnake()
+		}
 		m.overlay = rulesFor(m.currentMode())
 		return nil
 	}
@@ -345,6 +380,8 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 	}
 
 	switch m.page {
+	case snakeScreen:
+		return m.snakeKey(key)
 	case homeScreen:
 		return m.homeKey(key)
 	case roomScreen:
@@ -367,6 +404,17 @@ func (m *Model) homeKey(key string) tea.Cmd {
 	}
 	if m.menuOn {
 		return m.menuKey(key)
+	}
+	if key == "0" {
+		for i, item := range m.modes {
+			if item.ID == table.SnakeMode {
+				m.mode = i
+				m.fixSeats()
+				m.menuOn = true
+				break
+			}
+		}
+		return nil
 	}
 	switch key {
 	case "up", "k":
@@ -467,6 +515,10 @@ func (m *Model) controllerSnapshot() modeui.Snapshot {
 }
 
 func (m *Model) create() tea.Cmd {
+	if m.currentMode() == table.SnakeMode {
+		m.startSnake()
+		return nil
+	}
 	if !m.nameReady() {
 		return nil
 	}
@@ -598,6 +650,8 @@ func (m *Model) setSeats(value int) {
 func (m *Model) View() tea.View {
 	var content string
 	switch m.page {
+	case snakeScreen:
+		content = m.snakeView()
 	case homeScreen:
 		content = m.homeView()
 	case roomScreen:
@@ -632,7 +686,11 @@ func (m *Model) homeView() string {
 		if i == m.mode {
 			marker, style = "▶ ", selected
 		}
-		rows = append(rows, style.Render(fmt.Sprintf("%s%d. %-12s %s", marker, i+1, item.Name, item.Progress)))
+		shortcut := fmt.Sprint(i + 1)
+		if item.ID == table.SnakeMode {
+			shortcut = "0"
+		}
+		rows = append(rows, style.Render(fmt.Sprintf("%s%s. %-12s %s", marker, shortcut, item.Name, item.Progress)))
 	}
 	menu := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#426A58")).Padding(1, 2).Width(minInt(78, maxInt(42, m.width-8))).Render(strings.Join(rows, "\n"))
 	item := modeInfo{}
@@ -640,6 +698,9 @@ func (m *Model) homeView() string {
 		item = m.modes[m.mode]
 	}
 	settings := fmt.Sprintf("座位  %d / %d     玩家  %s     房间  %s", m.seats, item.MaxSeats, display(m.name.Value(), "玩家 1"), display(strings.ToUpper(m.code.Value()), "未填写"))
+	if item.ID == table.SnakeMode {
+		settings = "本地单机 · 无需房间或网络"
+	}
 	if m.editing == "name" {
 		settings = m.name.View()
 	} else if m.editing != "" {
@@ -648,7 +709,7 @@ func (m *Model) homeView() string {
 	if m.bots {
 		settings += fmt.Sprintf("    Sunjiajia ×%d", m.seats-1)
 	}
-	keys := "↑/↓ 选模式 · 1–9 / Enter 进入 · E 改名\nM 声音 · F5 重连服务 · Q 退出"
+	keys := "↑/↓ 选模式 · 1–9 多人 / 0 单机 · Enter 进入\nE 改名 · M 声音 · F5 重连服务 · Q 退出"
 	content := lipgloss.JoinVertical(lipgloss.Center, title, intro, "", menu, settings, "", statusStyle.Render(m.status), muted.Render(keys))
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
