@@ -81,7 +81,38 @@ func (s *Server) tick(now time.Time) {
 		if !ok {
 			continue
 		}
+		// Simultaneous games advance on the server clock, independently of
+		// keyboard traffic and the slower bot delay used by turn-based games.
+		if clocked, ok := engine.(interface {
+			Tick(time.Time, []string) bool
+		}); ok {
+			if rt.finished {
+				continue
+			}
+			var botIDs [4]string
+			automated := botIDs[:0]
+			for _, p := range snapshot.Players {
+				bot := p.Bot
+				if connected[p.ID] {
+					delete(rt.missing, p.ID)
+				} else if !bot {
+					if rt.missing[p.ID].IsZero() {
+						rt.missing[p.ID] = now
+					}
+					bot = now.Sub(rt.missing[p.ID]) >= 30*time.Second
+				}
+				if bot {
+					automated = append(automated, p.ID)
+				}
+			}
+			if clocked.Tick(now, automated) {
+				rt.finished = s.recordResult(snapshot, engine, rt)
+				s.broadcastGameState(snapshot.Code, room, engine)
+			}
+			continue
+		}
 		if now.Before(rt.nextBot) || now.Before(rt.pauseUntil) || rt.finished {
+			// Turn-based games retain their existing bot delay below.
 			continue
 		}
 		for _, p := range snapshot.Players {
@@ -205,13 +236,21 @@ func (s *Server) quickMatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "未知模式")
 		return
 	}
+	seats := info.MaxSeats
+	if req.Seats != 0 {
+		seats = req.Seats
+	}
+	if seats < info.MinSeats || seats > info.MaxSeats || (req.Mode == table.TetrisMode && seats != 2 && seats != 4) {
+		writeError(w, 400, "该模式的匹配人数无效")
+		return
+	}
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
 	player := table.Player{ID: req.PlayerID, Name: req.Name}
 	for _, room := range s.rooms.List() {
 		v := room.Snapshot()
 		rt := s.runtime[v.Code]
-		if v.Mode != req.Mode || v.Phase != table.Waiting || len(v.Players) >= v.Seats || rt == nil || rt.matchAt.IsZero() {
+		if v.Mode != req.Mode || v.Seats != seats || v.Phase != table.Waiting || len(v.Players) >= v.Seats || rt == nil || rt.matchAt.IsZero() {
 			continue
 		}
 		if err := room.Join(player); err != nil {
@@ -230,7 +269,7 @@ func (s *Server) quickMatch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, room.Snapshot())
 		return
 	}
-	room, err := s.rooms.Create(req.Mode, info.MaxSeats, player)
+	room, err := s.rooms.Create(req.Mode, seats, player)
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return

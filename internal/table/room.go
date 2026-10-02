@@ -19,6 +19,7 @@ const (
 	GomokuMode       Mode = "gomoku"
 	GoMode           Mode = "go"
 	UNOMode          Mode = "uno"
+	TetrisMode       Mode = "tetris"
 )
 
 type RoomPhase uint8

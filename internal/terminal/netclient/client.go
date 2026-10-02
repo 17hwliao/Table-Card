@@ -45,9 +45,13 @@ func (c *Client) Rooms(ctx context.Context, mode table.Mode) ([]table.Snapshot, 
 	err := c.request(ctx, http.MethodGet, "/api/rooms?mode="+url.QueryEscape(string(mode)), nil, &data)
 	return data, err
 }
-func (c *Client) Match(ctx context.Context, mode table.Mode, p table.Player) (table.Snapshot, error) {
+func (c *Client) Match(ctx context.Context, mode table.Mode, p table.Player, seats ...int) (table.Snapshot, error) {
 	var room table.Snapshot
-	err := c.request(ctx, http.MethodPost, "/api/match", map[string]any{"mode": mode, "playerId": p.ID, "name": p.Name}, &room)
+	request := map[string]any{"mode": mode, "playerId": p.ID, "name": p.Name}
+	if len(seats) > 0 {
+		request["seats"] = seats[0]
+	}
+	err := c.request(ctx, http.MethodPost, "/api/match", request, &room)
 	return room, err
 }
 

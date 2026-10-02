@@ -118,7 +118,7 @@ func (m *Model) Init() tea.Cmd { return loadModes(m.address) }
 func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := message.(type) {
 	case clockMsg:
-		if m.page == gameScreen && time.Now().Unix() < m.pauseUntil {
+		if m.needsClock() {
 			return m, clockTick()
 		}
 		m.clockActive = false
@@ -205,7 +205,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, reconnect(m.api, m.room.Code, m.player.ID, 1)
 		}
 		m.applyEnvelope(msg.envelope)
-		if m.page == gameScreen && time.Now().Unix() < m.pauseUntil && !m.clockActive {
+		if m.needsClock() && !m.clockActive {
 			m.clockActive = true
 			return m, tea.Batch(readSocket(msg.client), clockTick())
 		}
@@ -236,7 +236,11 @@ func (m *Model) applyEnvelope(envelope netclient.Envelope) {
 	case "state":
 		_ = json.Unmarshal(envelope.Room, &m.room)
 		if len(m.game) > 0 && !bytes.Equal(m.game, envelope.Game) {
-			m.sound.Effect(effectSeed(envelope.Game))
+			if m.room.Mode != table.TetrisMode {
+				m.sound.Effect(effectSeed(envelope.Game))
+			} else if seed, play := tetrisEffect(m.game, envelope.Game, m.player.ID); play {
+				m.sound.Effect(seed)
+			}
 		}
 		m.game = append(m.game[:0], envelope.Game...)
 		m.pauseUntil = envelope.PauseUntil
@@ -396,7 +400,7 @@ func (m *Model) homeKey(key string) tea.Cmd {
 	case "q":
 		return tea.Quit
 	default:
-		if len(key) == 1 && key[0] >= '1' && key[0] <= '8' {
+		if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
 			index := int(key[0] - '1')
 			if index < len(m.modes) {
 				m.mode = index
@@ -567,11 +571,21 @@ func (m *Model) fixSeats() {
 	if m.seats < item.MinSeats || m.seats > item.MaxSeats {
 		m.seats = item.MaxSeats
 	}
+	if item.ID == table.TetrisMode && m.seats == 3 {
+		m.seats = 4
+	}
 	m.bots = false
 }
 
 func (m *Model) setSeats(value int) {
 	item := m.modes[m.mode]
+	if item.ID == table.TetrisMode && value == 3 {
+		if value < m.seats {
+			value = 2
+		} else {
+			value = 4
+		}
+	}
 	if value < item.MinSeats {
 		value = item.MinSeats
 	}
@@ -599,7 +613,7 @@ func (m *Model) View() tea.View {
 	v := tea.NewView(content)
 	v.AltScreen = true
 	v.WindowTitle = "牌桌 Card Table"
-	if m.page == gameScreen && m.overlay == "" {
+	if m.page == gameScreen && m.overlay == "" && m.room.Mode != table.TetrisMode {
 		v.MouseMode = tea.MouseModeCellMotion
 	}
 	return v
@@ -634,7 +648,7 @@ func (m *Model) homeView() string {
 	if m.bots {
 		settings += fmt.Sprintf("    Sunjiajia ×%d", m.seats-1)
 	}
-	keys := "↑/↓ 选模式 · 1–8 / Enter 进入 · E 改名\nM 声音 · F5 重连服务 · Q 退出"
+	keys := "↑/↓ 选模式 · 1–9 / Enter 进入 · E 改名\nM 声音 · F5 重连服务 · Q 退出"
 	content := lipgloss.JoinVertical(lipgloss.Center, title, intro, "", menu, settings, "", statusStyle.Render(m.status), muted.Render(keys))
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
@@ -690,6 +704,16 @@ func (m *Model) gameView() string {
 		chat = "\n" + muted.Render(strings.Join(m.chatLog, "\n"))
 	}
 	status := m.status
+	if m.room.Mode == table.TetrisMode {
+		// Use the available rows for the board. Chat shares the status row rather
+		// than pushing the controls below a typical 30-row terminal window.
+		if m.chatOn {
+			status = m.chat.View() + " · Enter 发送 / Esc 返回操作"
+		} else if len(m.chatLog) > 0 {
+			status = m.chatLog[len(m.chatLog)-1]
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", view, statusStyle.Render(status), help)
+	}
 	if remaining := m.pauseUntil - time.Now().Unix(); remaining > 0 {
 		stage := "枪决结果"
 		if remaining > 5 {

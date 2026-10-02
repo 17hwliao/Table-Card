@@ -43,6 +43,7 @@ var modes = []modeInfo{
 	{table.GomokuMode, "五子棋", 2, 2, "规则引擎与终端棋盘已接入"},
 	{table.GoMode, "围棋", 2, 2, "19 路规则引擎与终端棋盘已接入"},
 	{table.UNOMode, "UNO", 2, 4, "108 张牌规则引擎已接入"},
+	{table.TetrisMode, "俄罗斯方块", 2, 4, "双人 / 四人实时生存对战 · 人机练习"},
 }
 
 func New() *Server {
@@ -116,6 +117,10 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 	}
 	if request.Bots < 0 || request.Bots >= request.Seats {
 		writeError(w, http.StatusBadRequest, "机器人数量必须小于座位数")
+		return
+	}
+	if request.Mode == table.TetrisMode && request.Seats != 2 && request.Seats != 4 {
+		writeError(w, http.StatusBadRequest, "俄罗斯方块只支持双人或四人对战")
 		return
 	}
 	room, err := s.rooms.Create(request.Mode, request.Seats, table.Player{ID: request.PlayerID, Name: request.Name})

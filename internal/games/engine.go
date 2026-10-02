@@ -12,6 +12,7 @@ import (
 	"github.com/17hwliao/table-card-independent/internal/internationalchess"
 	"github.com/17hwliao/table-card-independent/internal/mahjong"
 	"github.com/17hwliao/table-card-independent/internal/table"
+	"github.com/17hwliao/table-card-independent/internal/tetris"
 	"github.com/17hwliao/table-card-independent/internal/uno"
 )
 
@@ -66,6 +67,9 @@ func (r *Registry) Available(mode table.Mode) bool {
 
 func NewDefaultRegistry() *Registry {
 	registry := NewRegistry()
+	_ = registry.Register(table.TetrisMode, func(players []table.Player) (Engine, error) {
+		return tetris.NewEngine(players)
+	})
 	_ = registry.Register(table.LandlordMode, newLandlordEngine)
 	_ = registry.Register(table.LiarBarMode, newLiarBarEngine)
 	_ = registry.Register(table.GomokuMode, func(players []table.Player) (Engine, error) {
