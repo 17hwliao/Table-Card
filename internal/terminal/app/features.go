@@ -12,6 +12,7 @@ import (
 	"github.com/17hwliao/table-card-independent/internal/terminal/profile"
 	modeui "github.com/17hwliao/table-card-independent/internal/terminal/ui"
 	"github.com/17hwliao/table-card-independent/internal/uno"
+	"log"
 	"strings"
 	"time"
 )
@@ -85,6 +86,9 @@ func reconnect(client *netclient.Client, code, id string, attempt int) tea.Cmd {
 	}
 }
 func (m *Model) currentMode() table.Mode {
+	if m.page == pokemonScreen {
+		return table.PokemonMode
+	}
 	if m.page == snakeScreen {
 		return table.SnakeMode
 	}
@@ -97,6 +101,11 @@ func (m *Model) currentMode() table.Mode {
 	return ""
 }
 func (m *Model) Close() {
+	if m.pokemonGame != nil && !m.pokemonLoadError {
+		if err := m.pokemonGame.Save(); err != nil {
+			log.Printf("宝可梦存档保存失败：%v", err)
+		}
+	}
 	if m.api != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		_ = m.api.Leave(ctx, m.room.Code, m.player.ID)
@@ -171,6 +180,9 @@ func effectSeed(raw json.RawMessage) int {
 	return 12
 }
 func (m *Model) menuKey(key string) tea.Cmd {
+	if m.currentMode() == table.PokemonMode {
+		return m.pokemonMenuKey(key)
+	}
 	if m.currentMode() == table.SnakeMode {
 		return m.snakeMenuKey(key)
 	}
@@ -217,6 +229,9 @@ func (m *Model) menuKey(key string) tea.Cmd {
 	return nil
 }
 func (m *Model) modeLobbyView() string {
+	if m.currentMode() == table.PokemonMode {
+		return m.pokemonLobbyView()
+	}
 	if m.currentMode() == table.SnakeMode {
 		return m.snakeLobbyView()
 	}
@@ -407,6 +422,9 @@ func (m *Model) optionsView() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, b.String())
 }
 func rulesFor(mode table.Mode) string {
+	if mode == table.PokemonMode {
+		return pokemonRules
+	}
 	common := "\n\n/ 开始聊天；聊天中 Enter 发送、Esc 退出聊天\nEsc 取消选牌/选子；Del 离桌并由机器人接管\nF2 结束后再开一局；M 声音；F1 规则"
 	rules := map[table.Mode]string{
 		table.SnakeMode:        "贪吃蛇 · 本地单机\n方向键 / WASD 控制方向，每个移动节拍只转向一次。\n不能直接反向；最多缓存两次转向，重复按键忽略。\n吃到食物长度+1、得分+10；每吃5个食物升一级。\n触碰边界或自身立即死亡，不穿墙；填满棋盘获胜。\nEnter / 空格开始；P / 空格暂停或继续，Esc暂停。\nF2 / R重开；Del / Q返回本模式菜单；M开关声音。\n查看规则会自动暂停，返回后按P / 空格继续。\n单机模式不需要服务器、房间或其他玩家。",

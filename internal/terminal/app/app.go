@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/17hwliao/table-card-independent/internal/pokemon"
 	"github.com/17hwliao/table-card-independent/internal/snake"
 	"github.com/17hwliao/table-card-independent/internal/table"
 	"github.com/17hwliao/table-card-independent/internal/terminal/audio"
@@ -29,6 +30,7 @@ const (
 	roomScreen
 	gameScreen
 	snakeScreen
+	pokemonScreen
 )
 
 type modeInfo struct {
@@ -62,6 +64,11 @@ type actionSent struct{ err error }
 type chatSent struct{ err error }
 
 type Model struct {
+	pokemonGame                *pokemon.Game
+	pokemonInput               textinput.Model
+	pokemonGeneration          uint64
+	pokemonLogOffset           int
+	pokemonLoadError           bool
 	snakeGame                  *snake.Game
 	snakeGeneration, snakeStep uint64
 	snakeStarted, snakePaused  bool
@@ -116,10 +123,13 @@ func New(address, playerName string) *Model {
 	chat.Prompt = "聊天 › "
 	chat.CharLimit = 300
 	chat.SetWidth(50)
-	return &Model{modes: localModes(), sound: audio.New(), settings: defaultSettings(), address: address, page: homeScreen, name: name, code: code, chat: chat, seats: 1, status: "正在连接牌桌服务… · 0 可离线玩贪吃蛇", width: 90, height: 30}
+	return &Model{modes: localModes(), sound: audio.New(), settings: defaultSettings(), address: address, page: homeScreen, name: name, code: code, chat: chat, seats: 1, status: "正在连接牌桌服务… · 0 贪吃蛇 / P 宝可梦可离线玩", width: 90, height: 30}
 }
 
 func (m *Model) Init() tea.Cmd {
+	if m.page == pokemonScreen {
+		return tea.Batch(m.pokemonInput.Focus(), m.pokemonTimer())
+	}
 	if m.page == snakeScreen {
 		return nil
 	}
@@ -128,6 +138,8 @@ func (m *Model) Init() tea.Cmd {
 
 func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := message.(type) {
+	case pokemonTickMsg:
+		return m, m.pokemonTick(msg)
 	case snakeTickMsg:
 		return m, m.snakeTick(msg)
 	case clockMsg:
@@ -167,11 +179,14 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		if m.page == pokemonScreen {
+			m.pokemonInput.SetWidth(max(10, m.width-14))
+		}
 		return m, nil
 	case modesLoaded:
 		if msg.err != nil {
 			if m.page == homeScreen {
-				m.status = "服务未连接 · 0 可离线玩贪吃蛇 · F5 重连"
+				m.status = "服务未连接 · 0 贪吃蛇 / P 宝可梦可离线玩 · F5 重连"
 			}
 			return m, nil
 		}
@@ -250,6 +265,11 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m, m.key(msg)
 	}
+	if m.page == pokemonScreen {
+		var cmd tea.Cmd
+		m.pokemonInput, cmd = m.pokemonInput.Update(message)
+		return m, cmd
+	}
 	return m, nil
 }
 
@@ -294,7 +314,16 @@ func (m *Model) applyEnvelope(envelope netclient.Envelope) {
 func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 	key := message.String()
 	if key == "ctrl+c" {
+		if m.page == pokemonScreen {
+			if !m.savePokemon() {
+				return nil
+			}
+			return tea.Quit
+		}
 		return tea.Sequence(m.leave(), tea.Quit)
+	}
+	if m.page == pokemonScreen {
+		return m.pokemonKey(message)
 	}
 	if m.page == snakeScreen {
 		if pressed, ok := message.(tea.KeyPressMsg); ok && pressed.IsRepeat {
@@ -405,9 +434,13 @@ func (m *Model) homeKey(key string) tea.Cmd {
 	if m.menuOn {
 		return m.menuKey(key)
 	}
-	if key == "0" {
+	if key == "0" || key == "p" {
+		target := table.SnakeMode
+		if key == "p" {
+			target = table.PokemonMode
+		}
 		for i, item := range m.modes {
-			if item.ID == table.SnakeMode {
+			if item.ID == target {
 				m.mode = i
 				m.fixSeats()
 				m.menuOn = true
@@ -515,6 +548,9 @@ func (m *Model) controllerSnapshot() modeui.Snapshot {
 }
 
 func (m *Model) create() tea.Cmd {
+	if m.currentMode() == table.PokemonMode {
+		return m.startPokemon()
+	}
 	if m.currentMode() == table.SnakeMode {
 		m.startSnake()
 		return nil
@@ -650,6 +686,8 @@ func (m *Model) setSeats(value int) {
 func (m *Model) View() tea.View {
 	var content string
 	switch m.page {
+	case pokemonScreen:
+		content = m.pokemonView()
 	case snakeScreen:
 		content = m.snakeView()
 	case homeScreen:
@@ -690,6 +728,9 @@ func (m *Model) homeView() string {
 		if item.ID == table.SnakeMode {
 			shortcut = "0"
 		}
+		if item.ID == table.PokemonMode {
+			shortcut = "P"
+		}
 		rows = append(rows, style.Render(fmt.Sprintf("%s%s. %-12s %s", marker, shortcut, item.Name, item.Progress)))
 	}
 	menu := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#426A58")).Padding(1, 2).Width(minInt(78, maxInt(42, m.width-8))).Render(strings.Join(rows, "\n"))
@@ -698,7 +739,7 @@ func (m *Model) homeView() string {
 		item = m.modes[m.mode]
 	}
 	settings := fmt.Sprintf("座位  %d / %d     玩家  %s     房间  %s", m.seats, item.MaxSeats, display(m.name.Value(), "玩家 1"), display(strings.ToUpper(m.code.Value()), "未填写"))
-	if item.ID == table.SnakeMode {
+	if item.ID == table.SnakeMode || item.ID == table.PokemonMode {
 		settings = "本地单机 · 无需房间或网络"
 	}
 	if m.editing == "name" {
@@ -709,7 +750,7 @@ func (m *Model) homeView() string {
 	if m.bots {
 		settings += fmt.Sprintf("    Sunjiajia ×%d", m.seats-1)
 	}
-	keys := "↑/↓ 选模式 · 1–9 多人 / 0 单机 · Enter 进入\nE 改名 · M 声音 · F5 重连服务 · Q 退出"
+	keys := "↑/↓ 选模式 · 1–9 多人 / 0 贪吃蛇 / P 宝可梦 · Enter 进入\nE 改名 · M 声音 · F5 重连服务 · Q 退出"
 	content := lipgloss.JoinVertical(lipgloss.Center, title, intro, "", menu, settings, "", statusStyle.Render(m.status), muted.Render(keys))
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }

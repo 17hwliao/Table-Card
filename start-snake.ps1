@@ -1,5 +1,5 @@
 ﻿[CmdletBinding()]
-param()
+param([ValidateSet('snake', 'pokemon')][string]$Mode = 'snake', [string]$Name = '玩家 1')
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $binaryRoot = Join-Path $projectRoot 'bin'
@@ -21,7 +21,7 @@ try {
     }
     $needsBuild = (-not $clientBinary) -or ($hasSource -and $sourceNewest -gt $clientBinary.LastWriteTimeUtc)
     if ($needsBuild -and $hasSource -and (Get-Command go -ErrorAction SilentlyContinue)) {
-        $buildDirectory = Join-Path $binaryRoot ('builds/snake-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+        $buildDirectory = Join-Path $binaryRoot ('builds/solo-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
         New-Item -ItemType Directory -Path $buildDirectory -Force | Out-Null
         $clientPath = Join-Path $buildDirectory 'table-card.exe'
         Push-Location $projectRoot
@@ -31,11 +31,11 @@ try {
         } finally { Pop-Location }
     } else {
         if (-not $clientBinary) { throw '没有客户端程序。请使用完整便携包，或安装 Go 后从源码启动。' }
-        if ($needsBuild -and $hasSource) { throw '源码已更新但无法编译；请安装 Go 或使用包含贪吃蛇的新便携包。' }
+        if ($needsBuild -and $hasSource) { throw '源码已更新但无法编译；请安装 Go 或使用最新便携包。' }
         $clientPath = $clientBinary.FullName
     }
-    & $clientPath -snake
-    if ($LASTEXITCODE -ne 0) { throw '贪吃蛇客户端已异常退出。' }
+    & $clientPath "-$Mode" -name $Name
+    if ($LASTEXITCODE -ne 0) { throw '单机客户端已异常退出。' }
 } catch {
     Write-Host "启动失败：$($_.Exception.Message)" -ForegroundColor Red
     exit 1

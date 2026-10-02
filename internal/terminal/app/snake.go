@@ -14,7 +14,7 @@ import (
 type snakeTickMsg struct{ generation, step uint64 }
 
 func localModes() []modeInfo {
-	return []modeInfo{{ID: table.SnakeMode, Name: "贪吃蛇", MinSeats: 1, MaxSeats: 1, Progress: "本地单机 · 离线可玩 · 方向键控制"}}
+	return []modeInfo{{ID: table.SnakeMode, Name: "贪吃蛇", MinSeats: 1, MaxSeats: 1, Progress: "本地单机 · 离线可玩 · 方向键控制"}, {ID: table.PokemonMode, Name: "宝可梦文字冒险", MinSeats: 1, MaxSeats: 1, Progress: "离线单机 · 关都主线 · 三次摇球 · 自动存档"}}
 }
 
 // NewSnake opens the same terminal application directly in its offline mode.
