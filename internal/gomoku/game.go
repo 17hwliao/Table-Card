@@ -139,7 +139,12 @@ func NewEngine(players []table.Player) (*Engine, error) {
 }
 
 func (e *Engine) Mode() table.Mode { return table.GomokuMode }
-func (e *Engine) View(string) any  { return e.game.Snapshot() }
+func (e *Engine) Finished() bool {
+	e.game.mu.RLock()
+	defer e.game.mu.RUnlock()
+	return e.game.winner != "" || e.game.draw
+}
+func (e *Engine) View(string) any { return e.game.Snapshot() }
 func (e *Engine) Apply(playerID string, payload json.RawMessage) (any, error) {
 	var action struct {
 		Type string `json:"type"`

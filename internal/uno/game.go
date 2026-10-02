@@ -618,7 +618,12 @@ func NewEngine(players []table.Player) (*Engine, error) {
 	}
 	return &Engine{game: g}, nil
 }
-func (e *Engine) Mode() table.Mode   { return table.UNOMode }
+func (e *Engine) Mode() table.Mode { return table.UNOMode }
+func (e *Engine) Finished() bool {
+	e.game.mu.RLock()
+	defer e.game.mu.RUnlock()
+	return e.game.finished
+}
 func (e *Engine) View(id string) any { return e.game.View(id) }
 func (e *Engine) Apply(id string, payload json.RawMessage) (any, error) {
 	return e.game.Apply(id, payload)

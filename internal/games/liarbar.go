@@ -28,6 +28,7 @@ func newLiarBarEngine(players []table.Player) (Engine, error) {
 }
 
 func (e *liarBarEngine) Mode() table.Mode { return table.LiarBarMode }
+func (e *liarBarEngine) Finished() bool   { return e.game.Finished() }
 
 func (e *liarBarEngine) View(viewerID string) any {
 	return e.game.Snapshot(viewerID)

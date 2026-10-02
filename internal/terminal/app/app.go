@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -68,6 +69,7 @@ type Model struct {
 	pending      bool
 	reconnecting bool
 	pauseUntil   int64
+	clockActive  bool
 	address      string
 	api          *netclient.Client
 	page         screen
@@ -111,12 +113,17 @@ func New(address, playerName string) *Model {
 	return &Model{sound: audio.New(), settings: defaultSettings(), address: address, page: homeScreen, name: name, code: code, chat: chat, seats: 2, status: "正在连接牌桌服务…", width: 90, height: 30}
 }
 
-func (m *Model) Init() tea.Cmd { return tea.Batch(loadModes(m.address), clockTick()) }
+func (m *Model) Init() tea.Cmd { return loadModes(m.address) }
 
 func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := message.(type) {
 	case clockMsg:
-		return m, clockTick()
+		if m.page == gameScreen && time.Now().Unix() < m.pauseUntil {
+			return m, clockTick()
+		}
+		m.clockActive = false
+		m.pauseUntil = 0
+		return m, nil
 	case panelMsg:
 		m.pending = false
 		if msg.err != nil {
@@ -198,6 +205,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, reconnect(m.api, m.room.Code, m.player.ID, 1)
 		}
 		m.applyEnvelope(msg.envelope)
+		if m.page == gameScreen && time.Now().Unix() < m.pauseUntil && !m.clockActive {
+			m.clockActive = true
+			return m, tea.Batch(readSocket(msg.client), clockTick())
+		}
 		return m, readSocket(msg.client)
 	case actionSent:
 		if msg.err != nil {
@@ -224,7 +235,7 @@ func (m *Model) applyEnvelope(envelope netclient.Envelope) {
 		m.status = "等待玩家准备"
 	case "state":
 		_ = json.Unmarshal(envelope.Room, &m.room)
-		if len(m.game) > 0 && string(m.game) != string(envelope.Game) {
+		if len(m.game) > 0 && !bytes.Equal(m.game, envelope.Game) {
 			m.sound.Effect(effectSeed(envelope.Game))
 		}
 		m.game = append(m.game[:0], envelope.Game...)

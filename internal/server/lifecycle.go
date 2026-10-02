@@ -11,6 +11,7 @@ import (
 )
 
 type roomRuntime struct {
+	finished       bool
 	nextBot        time.Time
 	pauseUntil     time.Time
 	matchAt        time.Time
@@ -80,8 +81,7 @@ func (s *Server) tick(now time.Time) {
 		if !ok {
 			continue
 		}
-		s.recordResult(snapshot, engine, rt)
-		if now.Before(rt.nextBot) || now.Before(rt.pauseUntil) || gameFinished(engine) {
+		if now.Before(rt.nextBot) || now.Before(rt.pauseUntil) || rt.finished {
 			continue
 		}
 		for _, p := range snapshot.Players {
@@ -136,7 +136,7 @@ func (s *Server) applyLocked(code string, room *table.Room, engine games.Engine,
 		rt.pauseUntil = time.Now().Add(10 * time.Second)
 		rt.nextBot = rt.pauseUntil.Add(3 * time.Second)
 	}
-	s.recordResult(room.Snapshot(), engine, rt)
+	rt.finished = s.recordResult(room.Snapshot(), engine, rt)
 	return value, nil
 }
 func (s *Server) removeRoom(code string) {
@@ -270,14 +270,20 @@ func (s *Server) stateEnvelope(room *table.Room, engine games.Engine, id string)
 	return v
 }
 func gameFinished(engine games.Engine) bool {
+	if lightweight, ok := engine.(interface{ Finished() bool }); ok {
+		return lightweight.Finished()
+	}
 	v := gameMap(engine)
+	return gameFinishedView(engine.Mode(), v)
+}
+func gameFinishedView(mode table.Mode, v map[string]any) bool {
 	if b, _ := v["finished"].(bool); b {
 		return true
 	}
 	if b, _ := v["draw"].(bool); b {
 		return true
 	}
-	if engine.Mode() == table.LandlordMode {
+	if mode == table.LandlordMode {
 		return v["phase"] == float64(3)
 	}
 	winner, _ := v["winner"].(string)

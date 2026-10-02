@@ -216,7 +216,12 @@ func NewEngine(players []table.Player) (*Engine, error) {
 	return &Engine{game: g}, nil
 }
 func (e *Engine) Mode() table.Mode { return table.GoMode }
-func (e *Engine) View(string) any  { return e.game.Snapshot() }
+func (e *Engine) Finished() bool {
+	e.game.mu.RLock()
+	defer e.game.mu.RUnlock()
+	return e.game.finished
+}
+func (e *Engine) View(string) any { return e.game.Snapshot() }
 func (e *Engine) Apply(playerID string, payload json.RawMessage) (any, error) {
 	var a struct {
 		Type string `json:"type"`

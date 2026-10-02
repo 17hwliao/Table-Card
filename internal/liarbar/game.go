@@ -177,6 +177,12 @@ func (g *Game) Snapshot(viewerID string) Snapshot {
 	return view
 }
 
+func (g *Game) Finished() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.winner != ""
+}
+
 // Play hides cards from the public state until a challenge resolves them.
 func (g *Game) Play(playerID string, cardIDs []uint8) error {
 	g.mu.Lock()

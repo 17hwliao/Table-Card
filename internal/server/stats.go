@@ -98,14 +98,14 @@ func (s *Server) playerStats(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"leaderboard": rows, "mine": s.stats.entries[string(mode)+"/"+id]})
 }
-func (s *Server) recordResult(room table.Snapshot, engine games.Engine, rt *roomRuntime) {
+func (s *Server) recordResult(room table.Snapshot, engine games.Engine, rt *roomRuntime) bool {
 	if !gameFinished(engine) {
-		return
+		return false
 	}
 	v := gameMap(engine)
 	key := fmt.Sprint(v["round"], "/", v["winner"], "/", v["phase"])
 	if rt.recorded[key] {
-		return
+		return true
 	}
 	rt.recorded[key] = true
 	winner, _ := v["winner"].(string)
@@ -161,4 +161,5 @@ func (s *Server) recordResult(room table.Snapshot, engine games.Engine, rt *room
 		}
 		s.stats.record(room.Mode, p, w, l, d, score)
 	}
+	return true
 }

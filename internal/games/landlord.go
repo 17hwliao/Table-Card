@@ -39,6 +39,11 @@ func newLandlordEngine(players []table.Player) (Engine, error) {
 }
 
 func (e *landlordEngine) Mode() table.Mode { return table.LandlordMode }
+func (e *landlordEngine) Finished() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.round.Phase() == landlord.Complete
+}
 
 func (e *landlordEngine) View(viewerID string) any {
 	e.mu.Lock()

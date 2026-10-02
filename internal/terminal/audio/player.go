@@ -1,8 +1,8 @@
 package audio
 
 import (
-	"bytes"
 	"embed"
+	"errors"
 	"github.com/17hwliao/table-card-independent/internal/table"
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/effects"
@@ -82,12 +82,19 @@ func (p *Player) play() error {
 	case table.ChessMode, table.WesternChessMode:
 		file = "chess.mp3"
 	}
-	data, err := tracks.ReadFile(file)
+	asset, err := tracks.Open(file)
 	if err != nil {
 		return err
 	}
-	stream, format, err := mp3.Decode(io.NopCloser(bytes.NewReader(data)))
+	if _, ok := asset.(io.Seeker); !ok {
+		_ = asset.Close()
+		return errors.New("内置音乐不支持循环播放")
+	}
+	// Open reads directly from the embedded file instead of allocating a
+	// separate multi-megabyte byte slice in every client process.
+	stream, format, err := mp3.Decode(asset)
 	if err != nil {
+		_ = asset.Close()
 		return err
 	}
 	p.stream = stream

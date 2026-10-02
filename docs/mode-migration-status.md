@@ -28,8 +28,8 @@
 
 - 每个模式播放自己对应的背景音乐；没有专属曲目的模式沿用骗子酒馆主曲目。
 - 按 `M` 开关音乐，切换游戏模式时会切换曲目；棋盘落子和麻将操作有合成提示音。
-- MP3 文件编译进客户端；Windows 便携包不需要另外安装 Go、Docker、Redis 或数据库。
-- `start-table-card.ps1` 支持本地启动、多开客户端和连接已有服务端；`scripts/package-windows.ps1` 生成便携 ZIP。
+- MP3 文件编译进客户端，播放时从内嵌文件流读取；Windows 便携包不需要另外安装 Go、Docker、Redis 或数据库。
+- `start-table-card.ps1` 支持本地启动和多开；`join-table-card.bat` 让收到玩家包的朋友输入房主地址加入。`scripts/package-windows.ps1` 分别生成房主 ZIP 与玩家 ZIP。
 
 ## 需要继续实测的项目
 
