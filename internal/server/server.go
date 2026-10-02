@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,16 +15,17 @@ import (
 )
 
 type Server struct {
-	opMu     sync.Mutex
-	runtime  map[string]*roomRuntime
-	stats    *statStore
-	stop     chan struct{}
-	stopOnce sync.Once
-	rooms    *table.RoomManager
-	registry *games.Registry
-	mu       sync.RWMutex
-	engines  map[string]games.Engine
-	hub      *roomHub
+	listenAddress net.Addr
+	opMu          sync.Mutex
+	runtime       map[string]*roomRuntime
+	stats         *statStore
+	stop          chan struct{}
+	stopOnce      sync.Once
+	rooms         *table.RoomManager
+	registry      *games.Registry
+	mu            sync.RWMutex
+	engines       map[string]games.Engine
+	hub           *roomHub
 }
 
 type modeInfo struct {
@@ -60,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /api/health", s.health)
+	mux.HandleFunc("GET /api/connection-info", s.connectionInfo)
 	mux.HandleFunc("GET /api/modes", s.listModes)
 	mux.HandleFunc("POST /api/rooms", s.createRoom)
 	mux.HandleFunc("GET /api/rooms", s.listRooms)

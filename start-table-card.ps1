@@ -3,7 +3,8 @@ param(
     [ValidateRange(1, 16)][int]$Clients = 1,
     [ValidateRange(1, 65535)][int]$Port = 1781,
     [string]$Server = '',
-    [switch]$PromptClients
+    [switch]$PromptClients,
+    [switch]$ServerOnly
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
@@ -22,6 +23,64 @@ function Test-PortListening([int]$TargetPort) {
     try { return $probe.ConnectAsync('127.0.0.1', $TargetPort).Wait(800) -and $probe.Connected }
     catch { return $false }
     finally { $probe.Dispose() }
+}
+
+function Show-ConnectionAddresses([string]$LocalAddress, [int]$ListenPort) {
+    $info = $null
+    try {
+        $info = Invoke-RestMethod -Uri "http://$LocalAddress/api/connection-info" -TimeoutSec 3
+        if ($info.PSObject.Properties.Name -notcontains 'addresses') { $info = $null }
+    } catch { $info = $null }
+    if ($null -eq $info) {
+        # Match actual TCP bindings before displaying addresses for an older service.
+        $rows = @()
+        try {
+            $listeners = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object { $_.Port -eq $ListenPort })
+            $wildcard = @($listeners | Where-Object { $_.Address.Equals([Net.IPAddress]::Any) -or $_.Address.Equals([Net.IPAddress]::IPv6Any) }).Count -gt 0
+            foreach ($adapter in [Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+                if ($adapter.OperationalStatus -ne [Net.NetworkInformation.OperationalStatus]::Up -or $adapter.NetworkInterfaceType -eq [Net.NetworkInformation.NetworkInterfaceType]::Loopback) { continue }
+                $properties = $adapter.GetIPProperties()
+                $priority = 1
+                if (@($properties.GatewayAddresses).Count -gt 0) { $priority = 0 }
+                if ($adapter.Description -match '(?i)virtual|vmware|vpn|wsl|docker|tailscale|zerotier') { $priority = 2 }
+                foreach ($entry in $properties.UnicastAddresses) {
+                    $ip = $entry.Address
+                    if ($ip.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or [Net.IPAddress]::IsLoopback($ip) -or $ip.ToString() -match '^(169\.254\.|0\.)') { continue }
+                    $bound = @($listeners | Where-Object { $_.Address.Equals($ip) }).Count -gt 0
+                    if ($wildcard -or $bound) { $rows += [pscustomobject]@{ address = "$($ip):$ListenPort"; interface = $adapter.Name; priority = $priority } }
+                }
+            }
+        } catch { Write-Host '无法读取网卡地址，请检查当前网络连接。' -ForegroundColor Yellow }
+        $info = [pscustomobject]@{ local = $LocalAddress; addresses = @($rows | Sort-Object priority, address -Unique) }
+    }
+    Write-Host ''
+    Write-Host '========== 玩家连接地址 ==========' -ForegroundColor Green
+    $lines = @('牌桌服务端 · 玩家连接地址')
+    if ($info.local) {
+        Write-Host "仅房主本机使用：$($info.local)"
+        $lines += "仅房主本机使用：$($info.local)"
+    }
+    if (@($info.addresses).Count -gt 0) {
+        Write-Host '同一局域网的玩家，在 join-table-card.bat 输入下方 IP:端口：'
+        $lines += '同一局域网玩家输入以下地址：'
+        foreach ($entry in $info.addresses) {
+            Write-Host "  $($entry.address)  [$($entry.interface)]" -ForegroundColor Cyan
+            $lines += "$($entry.address)  [$($entry.interface)]"
+        }
+        Write-Host '多个地址时，选择与玩家同一网络的 Wi-Fi / 以太网地址。'
+    } else {
+        Write-Host '没有可分享的局域网地址；请检查网络连接和监听范围。' -ForegroundColor Yellow
+        $lines += '没有可分享的局域网地址。'
+    }
+    $lines += '客户端连接后，在大厅输入房间号加入。'
+    $lines += '连接需处于可访问的网络，并允许防火墙通过所用端口。'
+    New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+    $addressFile = Join-Path $runtimeDir "server-$ListenPort-addresses.txt"
+    [IO.File]::WriteAllText($addressFile, ($lines -join "`r`n"), [Text.UTF8Encoding]::new($true))
+    Write-Host "地址已保存：$addressFile"
+    Write-Host '连接后再用房间号加入；网络及防火墙需允许对应端口。'
+    Write-Host '==================================' -ForegroundColor Green
+    Write-Host ''
 }
 
 function Get-Binaries {
@@ -72,7 +131,7 @@ function Get-Binaries {
 }
 
 try {
-    if ($PromptClients) {
+    if ($PromptClients -and -not $ServerOnly) {
         while ($true) {
             $answer = Read-Host '打开几个终端客户端？输入 1–16，直接回车打开 1 个'
             if ([string]::IsNullOrWhiteSpace($answer)) { $Clients = 1; break }
@@ -84,6 +143,7 @@ try {
         }
     }
     $remote = -not [string]::IsNullOrWhiteSpace($Server)
+    if ($ServerOnly -and $remote) { throw '-ServerOnly 用于开启本地服务，不可同时指定远程 -Server。' }
     if ($remote) {
         $Server = $Server.Trim()
         $uri = $null
@@ -120,10 +180,13 @@ try {
         if (-not (Test-CompatibleServer $address)) { throw "服务启动超时。请查看 $errorPath；可运行 scripts/stop-local-server.ps1 -Port $Port 停止本次服务。" }
     }
 
-    Write-Host "正在打开 $Clients 个终端窗口，服务器：$address"
-    for ($index = 1; $index -le $Clients; $index++) {
-        Start-Process -FilePath $clientPath -ArgumentList @('-server', $address, '-name', "玩家$index") -WorkingDirectory $projectRoot -WindowStyle Normal | Out-Null
-        Start-Sleep -Milliseconds 150
+    if (-not $remote) { Show-ConnectionAddresses $address $Port }
+    if (-not $ServerOnly) {
+        Write-Host "正在打开 $Clients 个终端窗口，服务器：$address"
+        for ($index = 1; $index -le $Clients; $index++) {
+            Start-Process -FilePath $clientPath -ArgumentList @('-server', $address, '-name', "玩家$index") -WorkingDirectory $projectRoot -WindowStyle Normal | Out-Null
+            Start-Sleep -Milliseconds 150
+        }
     }
     if (-not $remote) {
         Write-Host "服务保持后台运行，可再次双击脚本增加客户端。停止命令：.\scripts\stop-local-server.ps1 -Port $Port"

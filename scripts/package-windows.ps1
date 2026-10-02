@@ -26,7 +26,7 @@ try {
 }
 Copy-Item -LiteralPath (Join-Path $hostStage 'bin/table-card.exe') -Destination (Join-Path $clientStage 'bin/table-card.exe')
 
-foreach ($name in @('start-table-card.ps1', 'start-table-card.bat', 'start-snake.ps1', 'start-snake.bat', 'join-table-card.ps1', 'join-table-card.bat', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
+foreach ($name in @('start-table-card.ps1', 'start-table-card.bat', 'start-server.bat', 'start-snake.ps1', 'start-snake.bat', 'join-table-card.ps1', 'join-table-card.bat', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination (Join-Path $hostStage $name)
 }
 foreach ($name in @('start-snake.ps1', 'start-snake.bat', 'join-table-card.ps1', 'join-table-card.bat', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
@@ -41,11 +41,12 @@ $hostInstructions = @'
 
 1. 完整解压后，双击 start-table-card.bat，输入要打开的本机客户端数量。
 2. 一个客户端创建房间，记住房间号，发给加入者。
-3. 将电脑的局域网 IP 和端口 1781 告诉同一局域网内的玩家，例如 192.168.1.20:1781。
+3. 启动窗口会显示可以发给玩家的局域网 IP:端口和网卡名。将与玩家同一网络的地址复制发给他们，例如 192.168.1.20:1781。
 4. 给其他玩家发送单独的 Table-Card-Client-Windows 压缩包；他们解压后双击 join-table-card.bat。
 5. 服务端会在后台保持运行。结束后运行 .\scripts\stop-local-server.ps1 停止。
 6. 公网游玩需要玩家能访问房主的网络和 TCP 端口；本项目没有云端中继。
 7. 单机贪吃蛇双击 start-snake.bat，无需启动服务端或输入网络地址。
+8. 只开启服务端可双击 start-server.bat，窗口会保留连接地址；地址同时保存在 runtime/server-1781-addresses.txt。
 
 使用者无需安装 Go、Docker 或 Redis。
 源码及许可证：https://github.com/17hwliao/Table-Card
