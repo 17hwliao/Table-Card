@@ -17,9 +17,17 @@ type pokemonTickMsg struct {
 	generation uint64
 	step       int
 }
+type pokemonRenderCache struct {
+	game     *pokemon.Game
+	revision uint64
+	width    int
+	header   string
+	lines    []string
+}
 
 func NewPokemon(name string) *Model { m := New("", name); m.startPokemon(); return m }
 func (m *Model) startPokemon() tea.Cmd {
+	m.pokemonCache = pokemonRenderCache{}
 	if !m.nameReady() {
 		return nil
 	}
@@ -98,6 +106,7 @@ func (m *Model) pokemonKey(message tea.KeyMsg) tea.Cmd {
 		}
 		m.pokemonGeneration++
 		m.pokemonGame = nil
+		m.pokemonCache = pokemonRenderCache{}
 		m.pokemonLoadError = false
 		m.page = homeScreen
 		m.menuOn = true
@@ -214,31 +223,37 @@ func (m *Model) pokemonView() string {
 		return "准备文字冒险…"
 	}
 	width := max(20, m.width-4)
-	header := titleStyle.Render("牌桌 / 宝可梦文字冒险 · "+g.AreaName()) + "\n" + muted.Render(fmt.Sprintf("训练者 %s · 零钱 %d · 本章挑战 %d/6 · 徽章 %d/8 · 捕获 %d/151", g.Name, g.Money, g.TrainerWins[g.Area], len(g.Badges), len(g.Caught)))
-	header += "\n" + ansi.Wrap("目标："+g.Objective(), width, "")
-	if b := g.Battle; b != nil {
-		p, f := g.Party[b.Active], b.Foes[b.Enemy]
-		header += "\n" + selected.Render(fmt.Sprintf("[%s] 对手 %s Lv%d [%s] %s", b.Name, f.Name(), f.Level, f.Status, hpBar(f.HP, f.MaxHP())))
-		header += "\n" + titleStyle.Render(fmt.Sprintf("你的 %s Lv%d [%s] %s", p.Name(), p.Level, p.Status, hpBar(p.HP, p.MaxHP())))
-		var moves []string
-		for i, id := range p.Moves {
-			moves = append(moves, fmt.Sprintf("%d.%s(%dPP)", i+1, pokemon.Moves[id].Name, p.PP[i]))
+	cached := m.pokemonCache.game == g && m.pokemonCache.revision == g.LogRevision() && m.pokemonCache.width == width
+	header := m.pokemonCache.header
+	if !cached {
+		header = titleStyle.Render("牌桌 / 宝可梦文字冒险 · "+g.AreaName()) + "\n" + muted.Render(fmt.Sprintf("训练者 %s · 零钱 %d · 本章挑战 %d/6 · 徽章 %d/8 · 捕获 %d/151", g.Name, g.Money, g.TrainerWins[g.Area], len(g.Badges), len(g.Caught)))
+		header += "\n" + ansi.Wrap("目标："+g.Objective(), width, "")
+		if b := g.Battle; b != nil {
+			p, f := g.Party[b.Active], b.Foes[b.Enemy]
+			header += "\n" + selected.Render(fmt.Sprintf("[%s] 对手 %s Lv%d [%s] %s", b.Name, f.Name(), f.Level, f.Status, hpBar(f.HP, f.MaxHP())))
+			header += "\n" + titleStyle.Render(fmt.Sprintf("你的 %s Lv%d [%s] %s", p.Name(), p.Level, p.Status, hpBar(p.HP, p.MaxHP())))
+			var moves []string
+			for i, id := range p.Moves {
+				moves = append(moves, fmt.Sprintf("%d.%s(%dPP)", i+1, pokemon.Moves[id].Name, p.PP[i]))
+			}
+			header += "\n" + ansi.Wrap(strings.Join(moves, "  "), width, "")
+			if c := g.Capture; c != nil {
+				header += "\n" + statusStyle.Render("精灵球  "+strings.Repeat("● ", c.Step)+strings.Repeat("○ ", 3-c.Step)+" · 摇动中")
+			}
+		} else if len(g.Party) > 0 {
+			var names []string
+			for i, p := range g.Party {
+				names = append(names, fmt.Sprintf("%d.%s Lv%d %d/%d", i+1, p.Name(), p.Level, p.HP, p.MaxHP()))
+			}
+			header += "\n" + ansi.Wrap(strings.Join(names, "  "), width, "")
 		}
-		header += "\n" + ansi.Wrap(strings.Join(moves, "  "), width, "")
-		if c := g.Capture; c != nil {
-			header += "\n" + statusStyle.Render("精灵球  "+strings.Repeat("● ", c.Step)+strings.Repeat("○ ", 3-c.Step)+" · 摇动中")
+		var lines []string
+		for _, entry := range g.Log {
+			lines = append(lines, strings.Split(ansi.Wrap(entry, width, ""), "\n")...)
 		}
-	} else if len(g.Party) > 0 {
-		var names []string
-		for i, p := range g.Party {
-			names = append(names, fmt.Sprintf("%d.%s Lv%d %d/%d", i+1, p.Name(), p.Level, p.HP, p.MaxHP()))
-		}
-		header += "\n" + ansi.Wrap(strings.Join(names, "  "), width, "")
+		m.pokemonCache = pokemonRenderCache{game: g, revision: g.LogRevision(), width: width, header: header, lines: lines}
 	}
-	var lines []string
-	for _, entry := range g.Log {
-		lines = append(lines, strings.Split(ansi.Wrap(entry, width, ""), "\n")...)
-	}
+	lines := m.pokemonCache.lines
 	footer := ansi.Truncate(m.status, width, "…") + "\n" + m.pokemonInput.View() + "\n" + muted.Render("Enter执行 · 帮助 · PgUp/PgDn历史 · F5存档 · F9声音 · Del保存返回")
 	rows := max(1, m.height-lipgloss.Height(header)-lipgloss.Height(footer)-3)
 	m.pokemonLogOffset = min(m.pokemonLogOffset, max(0, len(lines)-rows))

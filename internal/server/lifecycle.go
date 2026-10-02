@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/17hwliao/table-card-independent/internal/games"
+	"github.com/17hwliao/table-card-independent/internal/memory"
 	"github.com/17hwliao/table-card-independent/internal/table"
 	"net/http"
 	"time"
@@ -34,6 +35,11 @@ func (s *Server) tickLoop() {
 			return
 		case now := <-timer.C:
 			s.tick(now)
+			// Run after tick releases opMu and retired engines leave its stack.
+			// Only reclaim on becoming idle, never on every game frame.
+			if s.takeIdleRelease(now) {
+				memory.Release()
+			}
 		}
 	}
 }
@@ -176,6 +182,18 @@ func (s *Server) removeRoom(code string) {
 	delete(s.engines, code)
 	s.mu.Unlock()
 	delete(s.runtime, code)
+	s.idleRelease.Store(true)
+}
+
+func (s *Server) takeIdleRelease(now time.Time) bool {
+	if !s.idleRelease.Load() || s.rooms.Len() != 0 || (!s.lastRelease.IsZero() && now.Sub(s.lastRelease) < 10*time.Second) {
+		return false
+	}
+	if !s.idleRelease.Swap(false) {
+		return false
+	}
+	s.lastRelease = now
+	return true
 }
 func (s *Server) leaveRoom(room *table.Room, id string) error {
 	snap := room.Snapshot()

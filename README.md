@@ -137,6 +137,14 @@ go build ./...
 go test ./...
 ```
 
+执行全仓库测试、覆盖率、静态检查与并发检查：
+
+```powershell
+./scripts/test-project.ps1 -Race -Benchmarks -Launchers
+```
+
+性能探针见 `scripts/measure-memory.ps1` 和 `scripts/measure-server-memory.ps1`。本轮测试结果、测量范围与前后对照见 [内存优化与测试报告](docs/memory-and-test-report.md)。客户端默认采用 64MiB Go 内存软预算和最多两个执行核心；服务端为 128MiB 和最多四个核心，已有 `GOGC`、`GOMEMLIMIT`、`GOMAXPROCS` 环境设置优先。这是 Go 运行时软预算，整个进程仍会有终端、音频及系统开销。
+
 具体规则范围和当前已知限制见 [`docs/mode-migration-status.md`](docs/mode-migration-status.md)。
 
 ## 许可证与来源

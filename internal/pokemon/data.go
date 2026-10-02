@@ -63,10 +63,10 @@ var Moves = []Move{
 
 func moveSet(id, level int) [4]int {
 	t := Dex[id].Types[0]
-	basic := map[int]int{1: 0, 2: 12, 3: 10, 4: 7, 5: 8, 6: 8, 7: 11, 8: 6, 10: 2, 11: 3, 12: 4, 13: 1, 14: 5, 15: 13, 16: 14}[t]
+	basic := basicMoves[t]
 	strong := basic
 	if level >= 20 {
-		if n, ok := map[int]int{1: 19, 5: 9, 8: 25, 10: 21, 11: 22, 12: 23, 13: 20, 14: 24}[t]; ok {
+		if n := strongMoves[t]; n > 0 {
 			strong = n
 		}
 	}
@@ -82,6 +82,9 @@ func moveSet(id, level int) [4]int {
 	}
 	return [4]int{0, basic, status, strong}
 }
+
+var basicMoves = [17]int{1: 0, 2: 12, 3: 10, 4: 7, 5: 8, 6: 8, 7: 11, 8: 6, 10: 2, 11: 3, 12: 4, 13: 1, 14: 5, 15: 13, 16: 14}
+var strongMoves = [17]int{1: 19, 5: 9, 8: 25, 10: 21, 11: 22, 12: 23, 13: 20, 14: 24}
 
 type Area struct {
 	Name, Intro, Goal  string

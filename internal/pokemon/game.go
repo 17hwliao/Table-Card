@@ -57,7 +57,8 @@ type State struct {
 }
 type Game struct {
 	State
-	rng *rand.Rand
+	rng         *rand.Rand
+	logRevision uint64
 }
 
 func New(name string) *Game {
@@ -68,15 +69,20 @@ func New(name string) *Game {
 	return g
 }
 func (g *Game) say(format string, args ...any) {
-	g.Log = append(g.Log, fmt.Sprintf(format, args...))
-	if len(g.Log) > 120 {
-		g.Log = append([]string(nil), g.Log[len(g.Log)-120:]...)
+	text := fmt.Sprintf(format, args...)
+	if len(g.Log) >= 120 {
+		copy(g.Log, g.Log[1:])
+		g.Log[len(g.Log)-1] = text
+	} else {
+		g.Log = append(g.Log, text)
 	}
+	g.logRevision++
 }
-func (g *Game) Notice(text string) { g.say("%s", text) }
-func (g *Game) AreaName() string   { return Areas[g.Area].Name }
-func (g *Game) Objective() string  { return Areas[g.Area].Goal }
-func (g *Game) Busy() bool         { return g.Capture != nil }
+func (g *Game) LogRevision() uint64 { return g.logRevision }
+func (g *Game) Notice(text string)  { g.say("%s", text) }
+func (g *Game) AreaName() string    { return Areas[g.Area].Name }
+func (g *Game) Objective() string   { return Areas[g.Area].Goal }
+func (g *Game) Busy() bool          { return g.Capture != nil }
 func (g *Game) CaptureStep() int {
 	if g.Capture == nil {
 		return -1

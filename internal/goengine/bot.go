@@ -15,12 +15,13 @@ func (g *Game) candidate(x, y int) ([BoardSize][BoardSize]uint8, int, error) {
 	next[y][x] = g.turn
 	captured := 0
 	seen := [BoardSize][BoardSize]bool{}
+	var scratch [BoardSize * BoardSize][2]int
 	for _, d := range neighbors(x, y) {
 		nx, ny := x+d[0], y+d[1]
 		if !inBoard(nx, ny) || next[ny][nx] != opponent(g.turn) || seen[ny][nx] {
 			continue
 		}
-		group, liberties := collect(next, nx, ny)
+		group, liberties := collectInto(next, nx, ny, &scratch)
 		for _, p := range group {
 			seen[p[1]][p[0]] = true
 		}
@@ -31,7 +32,7 @@ func (g *Game) candidate(x, y int) ([BoardSize][BoardSize]uint8, int, error) {
 			}
 		}
 	}
-	if _, liberties := collect(next, x, y); liberties == 0 {
+	if _, liberties := collectInto(next, x, y, &scratch); liberties == 0 {
 		return next, 0, errors.New("禁止自杀着")
 	}
 	if g.history[next] {
@@ -48,13 +49,14 @@ func (e *Engine) BotAction(playerID string) json.RawMessage {
 		return nil
 	}
 	best, bx, by := -1<<30, -1, -1
+	var scratch [BoardSize * BoardSize][2]int
 	for y := 0; y < BoardSize; y++ {
 		for x := 0; x < BoardSize; x++ {
 			next, captured, err := g.candidate(x, y)
 			if err != nil {
 				continue
 			}
-			_, libs := collect(next, x, y)
+			_, libs := collectInto(next, x, y, &scratch)
 			own, enemy, border := 0, 0, 0
 			rescue := 0
 			for _, d := range neighbors(x, y) {
@@ -65,7 +67,7 @@ func (e *Engine) BotAction(playerID string) json.RawMessage {
 				}
 				if g.board[ny][nx] == g.turn {
 					own++
-					group, before := collect(g.board, nx, ny)
+					group, before := collectInto(g.board, nx, ny, &scratch)
 					if before == 1 && libs > 1 {
 						rescue += len(group) * 12
 					}

@@ -9,7 +9,13 @@ $backend = Get-Process -Id $record.ProcessId -ErrorAction SilentlyContinue
 if ($backend) {
     $expectedPath = [IO.Path]::GetFullPath($record.Executable)
     $actualPath = $backend.Path
-    $expectedStart = [datetime]::Parse($record.Started).ToUniversalTime()
+    # PowerShell 7 converts JSON timestamps to DateTime; 5.1 leaves strings.
+    # Parsing a DateTime via its display string would discard the UTC kind.
+    if ($record.Started -is [datetime]) {
+        $expectedStart = $record.Started.ToUniversalTime()
+    } else {
+        $expectedStart = [datetime]::Parse([string]$record.Started, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+    }
     if (-not $expectedPath.StartsWith($projectRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
         $actualPath -ine $expectedPath -or [Math]::Abs(($backend.StartTime.ToUniversalTime() - $expectedStart).TotalSeconds) -gt 1) {
         throw '进程信息与本项目启动记录不符，未执行停止。'

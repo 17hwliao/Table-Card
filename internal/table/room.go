@@ -75,6 +75,12 @@ func NewRoomManager() *RoomManager {
 	return &RoomManager{rooms: make(map[string]*Room)}
 }
 
+func (m *RoomManager) Len() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.rooms)
+}
+
 func (m *RoomManager) Create(mode Mode, seats int, owner Player) (*Room, error) {
 	if seats < 2 || seats > 4 {
 		return nil, fmt.Errorf("座位数必须在 2 到 4 之间")

@@ -122,6 +122,7 @@ func (g *Game) snapshotLocked() Snapshot {
 func score(board [BoardSize][BoardSize]uint8) (float64, float64) {
 	var black, white float64
 	visited := [BoardSize][BoardSize]bool{}
+	var queue [BoardSize * BoardSize][2]int
 	for y := 0; y < BoardSize; y++ {
 		for x := 0; x < BoardSize; x++ {
 			switch board[y][x] {
@@ -133,14 +134,13 @@ func score(board [BoardSize][BoardSize]uint8) (float64, float64) {
 				if visited[y][x] {
 					continue
 				}
-				region := [][2]int{}
-				queue := [][2]int{{x, y}}
+				queue[0] = [2]int{x, y}
+				head, tail := 0, 1
 				visited[y][x] = true
 				borders := uint8(0)
-				for len(queue) > 0 {
-					p := queue[0]
-					queue = queue[1:]
-					region = append(region, p)
+				for head < tail {
+					p := queue[head]
+					head++
 					for _, d := range neighbors(p[0], p[1]) {
 						nx, ny := p[0]+d[0], p[1]+d[1]
 						if !inBoard(nx, ny) {
@@ -149,16 +149,17 @@ func score(board [BoardSize][BoardSize]uint8) (float64, float64) {
 						c := board[ny][nx]
 						if c == Empty && !visited[ny][nx] {
 							visited[ny][nx] = true
-							queue = append(queue, [2]int{nx, ny})
+							queue[tail] = [2]int{nx, ny}
+							tail++
 						} else if c != Empty {
 							borders |= c
 						}
 					}
 				}
 				if borders == Black {
-					black += float64(len(region))
+					black += float64(tail)
 				} else if borders == White {
-					white += float64(len(region))
+					white += float64(tail)
 				}
 			}
 		}
@@ -166,21 +167,20 @@ func score(board [BoardSize][BoardSize]uint8) (float64, float64) {
 	return black, white
 }
 
-func collect(board [BoardSize][BoardSize]uint8, x, y int) ([][2]int, int) {
+func collectInto(board [BoardSize][BoardSize]uint8, x, y int, queue *[BoardSize * BoardSize][2]int) ([][2]int, int) {
 	color := board[y][x]
 	if color == Empty {
 		return nil, 0
 	}
 	seen := [BoardSize][BoardSize]bool{}
 	liberty := [BoardSize][BoardSize]bool{}
-	group := [][2]int{}
-	queue := [][2]int{{x, y}}
+	queue[0] = [2]int{x, y}
+	head, tail := 0, 1
 	seen[y][x] = true
 	count := 0
-	for len(queue) > 0 {
-		p := queue[0]
-		queue = queue[1:]
-		group = append(group, p)
+	for head < tail {
+		p := queue[head]
+		head++
 		for _, d := range neighbors(p[0], p[1]) {
 			nx, ny := p[0]+d[0], p[1]+d[1]
 			if !inBoard(nx, ny) {
@@ -191,11 +191,12 @@ func collect(board [BoardSize][BoardSize]uint8, x, y int) ([][2]int, int) {
 				count++
 			} else if board[ny][nx] == color && !seen[ny][nx] {
 				seen[ny][nx] = true
-				queue = append(queue, [2]int{nx, ny})
+				queue[tail] = [2]int{nx, ny}
+				tail++
 			}
 		}
 	}
-	return group, count
+	return queue[:tail], count
 }
 func neighbors(x, y int) [][2]int { return [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} }
 func inBoard(x, y int) bool       { return x >= 0 && x < BoardSize && y >= 0 && y < BoardSize }

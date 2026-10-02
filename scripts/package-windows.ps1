@@ -40,6 +40,12 @@ foreach ($stage in @($hostStage, $clientStage)) {
     New-Item -ItemType Directory -Path $licenses -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $projectRoot 'internal/pokemon/POKEAPI_LICENSE.md') -Destination (Join-Path $licenses 'POKEAPI_LICENSE.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/pokemon-text-adventure.md') -Destination (Join-Path $stage '宝可梦指令与规则.md')
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/memory-and-test-report.md') -Destination (Join-Path $stage 'memory-and-test-report.md')
+}
+$hostDocs = Join-Path $hostStage 'docs'
+New-Item -ItemType Directory -Path $hostDocs -Force | Out-Null
+foreach ($name in @('mode-migration-status.md', 'pokemon-text-adventure.md', 'memory-and-test-report.md')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot "docs/$name") -Destination (Join-Path $hostDocs $name)
 }
 
 $hostInstructions = @'

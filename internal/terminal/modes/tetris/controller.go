@@ -146,7 +146,7 @@ func (*Controller) View(s ui.Snapshot) string {
 			}
 			right = strings.Join(rows, "\n") + "\n\n下一块\n" + nextPreview(p.Next)
 		}
-		tableView = lipgloss.JoinHorizontal(lipgloss.Top, fullBoard(p, true), "  ", right)
+		tableView = ui.JoinTop(fullBoard(p, true), "  ", right)
 	}
 	return highlight.Render(status) + "\n" + tableView + "\n" + muted.Render("←/→ 移动 · ↑/↓ 旋转 · S 加速 · 空格 落底")
 }
@@ -159,7 +159,7 @@ func joinBoards(boards []string, separator string) string {
 		}
 		parts = append(parts, b)
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	return ui.JoinTop(parts...)
 }
 func playerLabel(p game.Player, mine bool) string {
 	name := p.Name

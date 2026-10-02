@@ -21,6 +21,7 @@ func testIdentity(token string) (string, string) {
 }
 
 func TestAuthenticatedBotRoomLifecycle(t *testing.T) {
+	t.Setenv("TABLE_CARD_DATA_DIR", t.TempDir())
 	s := New()
 	httpServer := httptest.NewServer(s.Handler())
 	t.Cleanup(func() {

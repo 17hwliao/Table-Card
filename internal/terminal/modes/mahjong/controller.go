@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"charm.land/lipgloss/v2"
 
@@ -285,6 +286,27 @@ func capText(fan int) string {
 	return fmt.Sprint(fan)
 }
 func tileCard(t game.Tile, selected, cursor bool) string {
+	if t.Suit < 3 && t.Rank >= 1 && t.Rank <= 9 {
+		variant := 0
+		if cursor {
+			variant = 1
+		}
+		if selected {
+			variant = 2
+		}
+		entry := &tileCache[t.Suit][t.Rank-1][variant]
+		entry.once.Do(func() { entry.text = renderTileCard(t, selected, cursor) })
+		return entry.text
+	}
+	return renderTileCard(t, selected, cursor)
+}
+
+var tileCache [3][9][3]struct {
+	once sync.Once
+	text string
+}
+
+func renderTileCard(t game.Tile, selected, cursor bool) string {
 	color := lipgloss.Color("252")
 	if t.Suit < 3 {
 		color = lipgloss.Color([]string{"203", "81", "114"}[t.Suit])

@@ -26,6 +26,11 @@ $serverBatchPath = Join-Path $DesktopPath '牌桌服务端.bat'
 $serverContent = "@echo off`r`nsetlocal`r`nchcp 65001 >nul`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$escapedEntry`" -ServerOnly %*`r`npause`r`n"
 [IO.File]::WriteAllText($serverBatchPath, $serverContent, [Text.UTF8Encoding]::new($false))
 Write-Host "已创建服务端与地址展示入口：$serverBatchPath"
+$stopEntry = (Join-Path $PSScriptRoot 'stop-local-server.ps1').Replace('%', '%%')
+$stopBatchPath = Join-Path $DesktopPath '牌桌停止服务.bat'
+$stopContent = "@echo off`r`nsetlocal`r`nchcp 65001 >nul`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$stopEntry`" %*`r`npause`r`n"
+[IO.File]::WriteAllText($stopBatchPath, $stopContent, [Text.UTF8Encoding]::new($false))
+Write-Host "已创建停止默认端口服务入口：$stopBatchPath"
 $snakeEntry = (Join-Path $projectRoot 'start-snake.ps1').Replace('%', '%%')
 $snakeBatchPath = Join-Path $DesktopPath '牌桌贪吃蛇.bat'
 $snakeContent = "@echo off`r`nsetlocal`r`nchcp 65001 >nul`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$snakeEntry`"`r`nif errorlevel 1 pause`r`n"

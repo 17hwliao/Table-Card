@@ -122,6 +122,8 @@ func (m *Model) leave() tea.Cmd {
 	m.room = table.Snapshot{}
 	m.game = nil
 	m.control = nil
+	m.chatLog = nil
+	m.chat.SetValue("")
 	m.chatOn = false
 	m.reconnecting = false
 	m.page = homeScreen

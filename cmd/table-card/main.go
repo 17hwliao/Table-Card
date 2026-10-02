@@ -5,10 +5,12 @@ import (
 	"log"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/17hwliao/table-card-independent/internal/memory"
 	"github.com/17hwliao/table-card-independent/internal/terminal/app"
 )
 
 func main() {
+	memory.Client()
 	server := flag.String("server", "localhost:1781", "牌桌服务端地址")
 	name := flag.String("name", "玩家 1", "默认玩家名称")
 	soloSnake := flag.Bool("snake", false, "直接打开离线单机贪吃蛇")

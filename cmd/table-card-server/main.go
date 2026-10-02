@@ -11,10 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/17hwliao/table-card-independent/internal/memory"
 	"github.com/17hwliao/table-card-independent/internal/server"
 )
 
 func main() {
+	memory.Server()
 	address := flag.String("listen", ":1781", "牌桌服务端监听地址")
 	flag.Parse()
 	listener, err := net.Listen("tcp", *address)

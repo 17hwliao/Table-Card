@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"charm.land/lipgloss/v2"
 
@@ -401,18 +402,17 @@ func gridView(title string, cols, rows, cx, cy int, selected *[2]int, cell func(
 	for y := 0; y < rows; y++ {
 		fmt.Fprintf(&b, "%2d │", rows-y)
 		for x := 0; x < cols; x++ {
-			bg := "#443A2D"
+			variant := 0
 			if cols == 8 && (x+y)%2 == 0 {
-				bg = "#6A6352"
+				variant = 1
 			}
-			style := lipgloss.NewStyle().Background(lipgloss.Color(bg))
 			if selected != nil && selected[0] == x && selected[1] == y {
-				style = style.Background(lipgloss.Color("#246651")).Bold(true)
+				variant = 2
 			}
 			if x == cx && y == cy {
-				style = style.Background(lipgloss.Color("#52648A")).Bold(true)
+				variant = 3
 			}
-			b.WriteString(style.Render(center(cell(x, y), cw)))
+			b.WriteString(renderCell(cell(x, y), cw, variant))
 		}
 		b.WriteString("│\n")
 	}
@@ -422,6 +422,40 @@ func gridView(title string, cols, rows, cx, cy int, selected *[2]int, cell func(
 		b.WriteString("\n" + extra)
 	}
 	return b.String()
+}
+
+type cellKey struct {
+	text           string
+	width, variant int
+}
+
+var cellCache = struct {
+	sync.Mutex
+	entries map[cellKey]string
+}{entries: make(map[cellKey]string)}
+var cellStyles = [4]lipgloss.Style{
+	lipgloss.NewStyle().Background(lipgloss.Color("#443A2D")),
+	lipgloss.NewStyle().Background(lipgloss.Color("#6A6352")),
+	lipgloss.NewStyle().Background(lipgloss.Color("#246651")).Bold(true),
+	lipgloss.NewStyle().Background(lipgloss.Color("#52648A")).Bold(true),
+}
+
+// Cache only a bounded vocabulary of cells, never entire boards or matches.
+func renderCell(text string, width, variant int) string {
+	key := cellKey{text, width, variant}
+	cellCache.Lock()
+	cached, ok := cellCache.entries[key]
+	cellCache.Unlock()
+	if ok {
+		return cached
+	}
+	rendered := cellStyles[variant].Render(center(text, width))
+	cellCache.Lock()
+	if len(cellCache.entries) < 512 {
+		cellCache.entries[key] = rendered
+	}
+	cellCache.Unlock()
+	return rendered
 }
 func cellWidth(cols int) int {
 	if cols == 8 || cols == 9 {

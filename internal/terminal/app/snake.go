@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/17hwliao/table-card-independent/internal/snake"
 	"github.com/17hwliao/table-card-independent/internal/table"
+	modeui "github.com/17hwliao/table-card-independent/internal/terminal/ui"
 )
 
 type snakeTickMsg struct{ generation, step uint64 }
@@ -199,6 +200,6 @@ func (m *Model) snakeView() string {
 	}
 	title := titleStyle.Render("牌桌 / 贪吃蛇 · 本地单机")
 	score := fmt.Sprintf("分数 %d · 长度 %d · 等级 %d · 本次最高 %d", state.Score, state.Length, state.Level, m.snakeBest)
-	content := lipgloss.JoinVertical(lipgloss.Left, title, muted.Render(score), snakeHeadStyle.Render(phase), b.String(), statusStyle.Render(m.status), muted.Render("方向键 / WASD · P/空格 暂停 · F2 重开\nDel 返回菜单 · F1 规则 · M 声音"))
+	content := modeui.JoinLeft(title, muted.Render(score), snakeHeadStyle.Render(phase), b.String(), statusStyle.Render(m.status), muted.Render("方向键 / WASD · P/空格 暂停 · F2 重开\nDel 返回菜单 · F1 规则 · M 声音"))
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }

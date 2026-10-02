@@ -69,6 +69,7 @@ type Model struct {
 	pokemonGeneration          uint64
 	pokemonLogOffset           int
 	pokemonLoadError           bool
+	pokemonCache               pokemonRenderCache
 	snakeGame                  *snake.Game
 	snakeGeneration, snakeStep uint64
 	snakeStarted, snakePaused  bool
@@ -814,7 +815,7 @@ func (m *Model) gameView() string {
 		} else if len(m.chatLog) > 0 {
 			status = m.chatLog[len(m.chatLog)-1]
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, header, "", view, statusStyle.Render(status), help)
+		return modeui.JoinLeft(header, "", view, statusStyle.Render(status), help)
 	}
 	if remaining := m.pauseUntil - time.Now().Unix(); remaining > 0 {
 		stage := "枪决结果"
@@ -823,7 +824,7 @@ func (m *Model) gameView() string {
 		}
 		status = fmt.Sprintf("%s · %d 秒后继续", stage, remaining)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", view, "", statusStyle.Render(status), help, chat)
+	return modeui.JoinLeft(header, "", view, "", statusStyle.Render(status), help, chat)
 }
 
 func loadModes(address string) tea.Cmd {

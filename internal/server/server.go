@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/17hwliao/table-card-independent/internal/games"
@@ -21,6 +22,8 @@ type Server struct {
 	stats         *statStore
 	stop          chan struct{}
 	stopOnce      sync.Once
+	idleRelease   atomic.Bool
+	lastRelease   time.Time // Owned by tickLoop.
 	rooms         *table.RoomManager
 	registry      *games.Registry
 	mu            sync.RWMutex
