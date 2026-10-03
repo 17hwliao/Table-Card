@@ -24,7 +24,7 @@ func (g *Game) available(item string) bool {
 	return true
 }
 func (g *Game) shopInfo() {
-	g.say("商店 · 零钱%d；购买 物品 数量。进度提升后解锁高级球种和进化石。", g.Money)
+	g.say("商店 · 零钱%d；buy 物品编号 数量。进度提升后解锁高级球种和进化石。", g.Money)
 	for _, item := range itemOrder {
 		if g.available(item) {
 			g.say("%s：%d / 个", item, prices[item])
@@ -33,11 +33,11 @@ func (g *Game) shopInfo() {
 }
 func (g *Game) buy(words []string) error {
 	if len(words) < 2 {
-		return errors.New("例如：购买 精灵球 5")
+		return errors.New("例如：buy pokeball 5（或 buy 1 5）")
 	}
 	item := words[1]
 	if !g.available(item) {
-		return errors.New("商店尚未出售该物品，输入商店查看清单")
+		return errors.New("商店尚未出售该物品，输入 shop查看清单")
 	}
 	qty := 1
 	if len(words) > 2 {
@@ -59,7 +59,7 @@ func (g *Game) buy(words []string) error {
 }
 func (g *Game) use(words []string, inBattle bool) error {
 	if len(words) < 2 {
-		return errors.New("例如：使用 伤药 1")
+		return errors.New("例如：use potion 1（或 use 5 1）")
 	}
 	item := words[1]
 	if g.Items[item] <= 0 {
@@ -101,7 +101,7 @@ func (g *Game) use(words []string, inBattle bool) error {
 			effective = true
 		}
 	default:
-		return errors.New("该物品不能这样使用；精灵球用捕捉，进化石用进化")
+		return errors.New("该物品不能这样使用；精灵球用 catch，进化石用 evolve")
 	}
 	if !effective {
 		return errors.New("该物品对所选精灵无效，未消耗")
@@ -117,7 +117,7 @@ func (g *Game) boxCommand(command, arg string) error {
 	n, err := strconv.Atoi(arg)
 	n--
 	if err != nil {
-		return errors.New("请输入电脑/队伍编号，例如存入 2或取出 1")
+		return errors.New("请输入数字编号，例如 deposit 2 / withdraw 1")
 	}
 	if command == "存入" || command == "deposit" {
 		if len(g.Party) <= 1 {
@@ -150,7 +150,7 @@ func (g *Game) evolveCommand(command string, words []string) error {
 		}
 	} else {
 		if len(words) < 2 {
-			return errors.New("例如：进化 雷之石 1")
+			return errors.New("例如：evolve thunderstone 1（或 evolve 15 1）")
 		}
 		item = words[1]
 		if len(words) > 2 {

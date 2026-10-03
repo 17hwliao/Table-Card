@@ -14,6 +14,7 @@ type Monster struct {
 	Status                  string
 	Sleep                   int
 	Moves, PP               [4]int
+	Signature               bool
 }
 
 func (m Monster) Name() string      { return Dex[m.Species].Name }
@@ -54,6 +55,7 @@ type State struct {
 	Battle                       *Battle
 	Capture                      *Capture
 	Completed                    bool
+	Location                     int
 }
 type Game struct {
 	State
@@ -62,9 +64,9 @@ type Game struct {
 }
 
 func New(name string) *Game {
-	g := &Game{State: State{Version: 1, Name: name, Money: 4000, Items: map[string]int{"精灵球": 10, "伤药": 5}, TrainerWins: make([]int, len(Areas)), Flags: map[string]bool{}, Seen: map[int]bool{}, Caught: map[int]bool{}}, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
+	g := &Game{State: State{Version: 2, Name: name, Money: 4000, Items: map[string]int{"精灵球": 10, "伤药": 5}, TrainerWins: make([]int, len(Areas)), Flags: map[string]bool{}, Seen: map[int]bool{}, Caught: map[int]bool{}}, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
 	g.say("欢迎来到真新镇，%s。大木博士已经准备好三位初始伙伴。", name)
-	g.say("输入：选择 妙蛙种子 / 选择 小火龙 / 选择 杰尼龟。")
+	g.say("用数字菜单领取伙伴，或输入 starter 1 / starter 2 / starter 3。")
 	g.say("这是重新编写的关都文字冒险；真新镇与沿途章节各有6名独立挑战者。")
 	return g
 }
@@ -110,6 +112,7 @@ func (g *Game) Command(input string) error {
 	if len(words) == 0 {
 		return nil
 	}
+	words = normalizeASCII(words)
 	if g.Busy() {
 		return errors.New("精灵球正在摇动，请等待捕捉结果")
 	}
@@ -120,10 +123,10 @@ func (g *Game) Command(input string) error {
 		arg = words[1]
 	}
 	if command == "帮助" || command == "help" {
-		g.say("探索：进草丛 / 挑战 / 道馆 / 剧情 / 前进 / 前往 地名 / 地图 / 联盟 / 传说。")
-		g.say("战斗：招式 1–4 / 捕捉 精灵球 / 换精灵 1–6 / 使用 伤药 1 / 逃跑。")
-		g.say("管理：队伍 / 背包 / 商店 / 购买 精灵球 5 / 治疗 / 图鉴 1 / 电脑 / 存入 2 / 取出 1 / 进化 雷之石 1 / 交换 1。")
-		g.say("操作后自动存档；F5手动存档。新冒险 确认会替换本昵称的存档。")
+		g.say("探索：grass / challenge / gym / story / next / go 1–12 / map / league / legend 150。")
+		g.say("战斗：move 1–4 / catch 1–4 / switch 1–6 / use potion 1 / run。")
+		g.say("管理：party / bag / shop / buy pokeball 5 / heal / dex 1 / box / deposit 2 / withdraw 1 / evolve thunderstone 1 / trade 1。")
+		g.say("支线：quest / quest 1–3；专属技：train 1–6。所有功能也可用数字菜单选择；F5存档，new yes确认重置。")
 		return nil
 	}
 	if command == "队伍" || command == "party" {
@@ -155,7 +158,7 @@ func (g *Game) Command(input string) error {
 		}
 		return nil
 	}
-	if command == "进度" || command == "任务" {
+	if command == "进度" || command == "任务" || command == "progress" {
 		g.say("目标：%s；本章挑战 %d/6；徽章 %d/8。", g.Objective(), g.TrainerWins[g.Area], len(g.Badges))
 		return nil
 	}
@@ -165,7 +168,7 @@ func (g *Game) Command(input string) error {
 		}
 		id := map[string]int{"妙蛙种子": 1, "小火龙": 4, "杰尼龟": 7, "1": 1, "2": 4, "3": 7}[arg]
 		if id == 0 {
-			return errors.New("请选择妙蛙种子、小火龙或杰尼龟")
+			return errors.New("请starter 1妙蛙种子 / starter 2小火龙 / starter 3杰尼龟")
 		}
 		g.Party = append(g.Party, newMonster(id, 5))
 		g.Caught[id] = true
@@ -175,12 +178,28 @@ func (g *Game) Command(input string) error {
 		return nil
 	}
 	if len(g.Party) == 0 {
-		return errors.New("请先用“选择 妙蛙种子 / 小火龙 / 杰尼龟”领取伙伴")
+		return errors.New("请先选伙伴：starter 1 / starter 2 / starter 3")
 	}
 	if g.Battle != nil {
 		return g.battleCommand(command, words)
 	}
 	switch command {
+	case "visit":
+		n, err := strconv.Atoi(arg)
+		if err != nil || n < 1 || n > len(RegionPlaces(g.Area)) {
+			return errors.New("地点编号为1–8，打开 M 地区地图查看")
+		}
+		g.Location = n - 1
+		g.say("来到%s：%s", RegionPlaces(g.Area)[g.Location].Name, RegionPlaces(g.Area)[g.Location].Detail)
+		g.questExplore()
+	case "quest":
+		return g.questCommand(arg)
+	case "train":
+		n, err := strconv.Atoi(arg)
+		if err != nil {
+			return errors.New("train 后填写队伍编号1–6")
+		}
+		return g.trainSignature(n - 1)
 	case "进草丛", "草丛", "探索", "grass":
 		if !g.Ready() {
 			return errors.New("队伍全部失去战斗能力，请先治疗")
@@ -199,7 +218,7 @@ func (g *Game) Command(input string) error {
 		}
 		n := g.TrainerWins[g.Area]
 		if n >= 6 {
-			return errors.New("本章6名挑战者均已击败，使用剧情、道馆或前进")
+			return errors.New("本章6名挑战者均已击败，使用 story / gym / next")
 		}
 		a := Areas[g.Area]
 		level := a.MinLevel + 2 + n
@@ -225,7 +244,7 @@ func (g *Game) Command(input string) error {
 		return g.advance()
 	case "前往", "go":
 		if arg == "" {
-			return errors.New("例如：前往 紫苑镇；用地图查看已解锁地点")
+			return errors.New("例如：go 5 返回紫苑镇；W 查看已解锁地点")
 		}
 		for i, a := range Areas {
 			if strings.Contains(a.Name, arg) || arg == strconv.Itoa(i+1) {
@@ -233,6 +252,7 @@ func (g *Game) Command(input string) error {
 					return errors.New("该地点尚未解锁")
 				}
 				g.Area = i
+				g.Location = 0
 				g.say("来到%s。%s", a.Name, a.Intro)
 				return nil
 			}
@@ -265,7 +285,7 @@ func (g *Game) Command(input string) error {
 	case "传说", "legend":
 		return g.legend(arg)
 	default:
-		return errors.New("未知指令。输入“帮助”查看命令；命令与参数用空格分隔")
+		return errors.New("未知选项。输入 help 查看 ASCII 指令，或选择屏幕列出的数字")
 	}
 	return nil
 }

@@ -125,6 +125,7 @@ func (m *Model) leave() tea.Cmd {
 	m.chatLog = nil
 	m.chat.SetValue("")
 	m.chatOn = false
+	m.quickChat = false
 	m.reconnecting = false
 	m.page = homeScreen
 	m.menuOn = true

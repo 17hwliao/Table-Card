@@ -39,12 +39,13 @@ foreach ($stage in @($hostStage, $clientStage)) {
     $licenses = Join-Path $stage 'licenses'
     New-Item -ItemType Directory -Path $licenses -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $projectRoot 'internal/pokemon/POKEAPI_LICENSE.md') -Destination (Join-Path $licenses 'POKEAPI_LICENSE.md')
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/terminal-controls.md') -Destination (Join-Path $stage '终端全部操作.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/pokemon-text-adventure.md') -Destination (Join-Path $stage '宝可梦指令与规则.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/memory-and-test-report.md') -Destination (Join-Path $stage 'memory-and-test-report.md')
 }
 $hostDocs = Join-Path $hostStage 'docs'
 New-Item -ItemType Directory -Path $hostDocs -Force | Out-Null
-foreach ($name in @('mode-migration-status.md', 'pokemon-text-adventure.md', 'memory-and-test-report.md')) {
+foreach ($name in @('mode-migration-status.md', 'pokemon-text-adventure.md', 'memory-and-test-report.md', 'terminal-controls.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot "docs/$name") -Destination (Join-Path $hostDocs $name)
 }
 
@@ -59,7 +60,7 @@ $hostInstructions = @'
 6. 公网游玩需要玩家能访问房主的网络和 TCP 端口；本项目没有云端中继。
 7. 单机贪吃蛇双击 start-snake.bat，无需启动服务端或输入网络地址。
 8. 只开启服务端可双击 start-server.bat，窗口会保留连接地址；地址同时保存在 runtime/server-1781-addresses.txt。
-9. 宝可梦文字冒险双击 start-pokemon.bat，纯单机离线，进度按昵称保存；详细命令见“宝可梦指令与规则.md”。
+9. 宝可梦文字冒险双击 start-pokemon.bat，纯单机离线，进度按昵称保存；全程数字菜单，详细选项见“宝可梦指令与规则.md”。
 
 使用者无需安装 Go、Docker 或 Redis。
 源码及许可证：https://github.com/17hwliao/Table-Card
@@ -73,7 +74,7 @@ $clientInstructions = @'
 4. 默认端口是 1781；只输入 IP 时会自动补上该端口。
 5. 如果连接失败，确认房主正在运行服务、地址正确，且网络或防火墙允许连接。
 6. 离线玩贪吃蛇可直接双击 start-snake.bat，无需房主、网络或服务器。
-7. 离线宝可梦文字冒险双击 start-pokemon.bat；指令进草丛、挑战、捕捉、商店推动冒险，自动本地存档。
+7. 离线宝可梦文字冒险双击 start-pokemon.bat；全部行动支持数字菜单和英文字母，M地图 / C中心 / H指南（字母后按Enter），自动本地存档。
 
 玩家无需安装 Go、Docker、Redis 或其他运行环境。
 源码及许可证：https://github.com/17hwliao/Table-Card

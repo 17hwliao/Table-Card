@@ -40,6 +40,9 @@ func init() {
 	if len(data) != 151 {
 		panic("incomplete species data")
 	}
+	for id := 1; id <= 151; id++ {
+		Moves = append(Moves, Move{Name: signatureName(id), Type: Dex[id].Types[0], Power: 95, Accuracy: 100, PP: 8})
+	}
 }
 
 var TypeNames = map[int]string{1: "一般", 2: "格斗", 3: "飞行", 4: "毒", 5: "地面", 6: "岩石", 7: "虫", 8: "幽灵", 10: "火", 11: "水", 12: "草", 13: "电", 14: "超能力", 15: "冰", 16: "龙"}

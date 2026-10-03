@@ -22,9 +22,10 @@ try {
         throw '房主地址格式应为“IP或主机名:端口”，例如 192.168.1.20:1781。'
     }
     if ([string]::IsNullOrWhiteSpace($Name)) {
-        $Name = Read-Host '请输入你的游戏昵称'
+        $Name = Read-Host '游戏昵称（字母/数字即可，例如 Player1；直接回车默认 Player1）'
     }
     $Name = $Name.Trim()
+    if ([string]::IsNullOrWhiteSpace($Name)) { $Name = 'Player1' }
     if ($Name.Length -lt 1 -or $Name.Length -gt 24) {
         throw '昵称需要为 1 到 24 个字符。'
     }

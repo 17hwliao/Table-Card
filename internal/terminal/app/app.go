@@ -70,6 +70,12 @@ type Model struct {
 	pokemonLogOffset           int
 	pokemonLoadError           bool
 	pokemonCache               pokemonRenderCache
+	pokemonNav                 pokemonNavigationCache
+	pokemonPanel               string
+	pokemonTarget              int
+	pokemonOptionPage          int
+	pokemonInfoOffset          int
+	pokemonHistory             []pokemonMenuLocation
 	snakeGame                  *snake.Game
 	snakeGeneration, snakeStep uint64
 	snakeStarted, snakePaused  bool
@@ -77,6 +83,8 @@ type Model struct {
 	sound                      *audio.Player
 	menuOn                     bool
 	overlay                    string
+	overlayOffset              int
+	overlayLast                string
 	optionsOn                  bool
 	optionIndex                int
 	settings                   map[table.Mode]map[string]any
@@ -103,6 +111,7 @@ type Model struct {
 	status                     string
 	chat                       textinput.Model
 	chatOn                     bool
+	quickChat                  bool
 	chatLog                    []string
 }
 
@@ -112,6 +121,7 @@ func New(address, playerName string) *Model {
 	}
 	name := textinput.New()
 	name.Prompt = "姓名："
+	name.Placeholder = "Player1 / Alice / 123"
 	name.SetValue(playerName)
 	name.CharLimit = 24
 	name.SetWidth(26)
@@ -122,6 +132,7 @@ func New(address, playerName string) *Model {
 	code.SetWidth(20)
 	chat := textinput.New()
 	chat.Prompt = "聊天 › "
+	chat.Placeholder = "English text / F3 编号短语"
 	chat.CharLimit = 300
 	chat.SetWidth(50)
 	return &Model{modes: localModes(), sound: audio.New(), settings: defaultSettings(), address: address, page: homeScreen, name: name, code: code, chat: chat, seats: 1, status: "正在连接牌桌服务… · 0 贪吃蛇 / P 宝可梦可离线玩", width: 90, height: 30}
@@ -170,7 +181,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "已恢复房间连接"
 		return m, readSocket(m.api)
 	case tea.MouseClickMsg:
-		if m.page == gameScreen && !m.chatOn && m.overlay == "" && msg.Button == tea.MouseLeft {
+		if m.page == gameScreen && !m.chatOn && !m.quickChat && m.overlay == "" && msg.Button == tea.MouseLeft {
 			if control, ok := m.control.(interface {
 				Mouse(modeui.Snapshot, int, int) modeui.Result
 			}); ok {
@@ -356,6 +367,13 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 		}
 		return cmd
 	}
+	if m.quickChat {
+		return m.quickChatKey(key)
+	}
+	if key == "f3" && (m.page == roomScreen || m.page == gameScreen) && m.overlay == "" && !m.optionsOn {
+		m.quickChat = true
+		return nil
+	}
 	if m.chatOn {
 		if key == "esc" {
 			m.chatOn = false
@@ -393,9 +411,7 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 		return m.optionKey(key)
 	}
 	if m.overlay != "" {
-		if key == "esc" || key == "enter" {
-			m.overlay = ""
-		}
+		m.overlayKey(key)
 		return nil
 	}
 	if key == "f1" || key == "?" {
@@ -642,6 +658,7 @@ func (m *Model) closeRoom() {
 	m.game = nil
 	m.control = nil
 	m.chatOn = false
+	m.quickChat = false
 }
 
 func (m *Model) nameReady() bool {
@@ -698,12 +715,14 @@ func (m *Model) View() tea.View {
 	case gameScreen:
 		content = m.gameView()
 	}
-	if m.optionsOn {
+	if m.quickChat {
+		content = m.quickChatView()
+	} else if m.optionsOn {
 		content = m.optionsView()
 	} else if m.overlay != "" {
-		content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.overlay+"\n\nEsc / Enter 返回")
+		content = m.overlayView()
 	}
-	v := tea.NewView(content)
+	v := tea.NewView(strings.ReplaceAll(content, "\x00", ""))
 	v.AltScreen = true
 	v.WindowTitle = "牌桌 Card Table"
 	if m.page == gameScreen && m.overlay == "" && m.room.Mode != table.TetrisMode {
@@ -783,10 +802,10 @@ func (m *Model) roomView() string {
 		players = append(players, "等待房间状态…")
 	}
 	body := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#426A58")).Padding(1, 3).Width(58).Render(strings.Join(players, "\n"))
-	controls := "R 准备/取消准备   S 开始（全员准备后）   / 聊天   Esc 返回模式选择"
+	controls := "R 准备 · S 开始 · / 英文聊天 · F3 编号短语 · Esc 返回"
 	chat := ""
 	if m.chatOn {
-		chat = "\n" + m.chat.View() + "\n" + muted.Render("Enter 发送 · Esc 关闭聊天")
+		chat = "\n" + m.chat.View() + "\n" + muted.Render("Enter 发送 · F3 编号短语 · Esc 关闭聊天")
 	} else if len(m.chatLog) > 0 {
 		chat = "\n" + muted.Render(strings.Join(m.chatLog, "\n"))
 	}
@@ -799,7 +818,7 @@ func (m *Model) gameView() string {
 	}
 	view := m.control.View(m.controllerSnapshot())
 	header := titleStyle.Render(fmt.Sprintf("牌桌  /  %s  /  房间 %s", m.room.Mode, m.room.Code))
-	help := muted.Render("/ 聊天 · Esc 取消选择 · Del 离桌 · F1 规则 · F2 再来一局 · M 声音")
+	help := muted.Render("/ 英文聊天 · F3 短语 · Esc 取消 · Del 离桌 · F1 规则 · F2 再玩 · M 声音")
 	chat := ""
 	if m.chatOn {
 		chat = "\n" + m.chat.View() + "\n" + muted.Render("Enter 发送 · Esc 关闭聊天")

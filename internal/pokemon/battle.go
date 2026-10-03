@@ -46,7 +46,7 @@ func (g *Game) battleCommand(command string, words []string) error {
 		return g.throwBall(ball)
 	case "换精灵", "换", "switch":
 		if len(words) < 2 {
-			return errors.New("例如：换精灵 2")
+			return errors.New("例如：switch 2")
 		}
 		n, _ := strconv.Atoi(words[1])
 		n--
@@ -72,7 +72,7 @@ func (g *Game) battleCommand(command string, words []string) error {
 			g.enemyTurn()
 		}
 	default:
-		return errors.New("正在战斗：招式 1–4 / 捕捉 精灵球 / 换精灵 2 / 使用 伤药 1 / 逃跑")
+		return errors.New("正在战斗：move 1–4 / catch 1 / switch 2 / use potion 1 / run")
 	}
 	return nil
 }
@@ -321,6 +321,9 @@ func (g *Game) gainExp(index, amount int) {
 }
 func (g *Game) refreshMoves(m *Monster) {
 	next := moveSet(m.Species, m.Level)
+	if m.Signature {
+		next[3] = signatureMove(m.Species)
+	}
 	for i, id := range next {
 		if id != m.Moves[i] {
 			m.PP[i] = Moves[id].PP
@@ -359,7 +362,7 @@ func (g *Game) victory() {
 	case "gym":
 		g.Flags[b.Flag] = true
 		g.Badges = append(g.Badges, Areas[b.Area].Badge)
-		g.say("获得%s！输入前进继续旅程。", Areas[b.Area].Badge)
+		g.say("获得%s！输入 next 继续旅程。", Areas[b.Area].Badge)
 	case "event":
 		g.Flags[b.Flag] = true
 		g.eventReward(b.Flag)
@@ -371,7 +374,7 @@ func (g *Game) victory() {
 			g.Flags["champion"] = true
 			g.say("联盟殿堂记录下你与伙伴的名字。你已成为冠军！大木博士邀请你继续图鉴调查；前进可进入华蓝洞窟后篇。")
 		} else {
-			g.say("联盟进度%d/5。继续输入联盟迎战下一位；治疗会重置本轮进度。", g.Elite)
+			g.say("联盟进度%d/5。继续输入 league 迎战下一位；治疗会重置本轮进度。", g.Elite)
 		}
 	}
 }
