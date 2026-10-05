@@ -26,16 +26,23 @@ try {
 }
 Copy-Item -LiteralPath (Join-Path $hostStage 'bin/table-card.exe') -Destination (Join-Path $clientStage 'bin/table-card.exe')
 
-foreach ($name in @('start-table-card.ps1', 'start-table-card.bat', 'start-server.bat', 'start-snake.ps1', 'start-snake.bat', 'start-pokemon.ps1', 'start-pokemon.bat', 'join-table-card.ps1', 'join-table-card.bat', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
+foreach ($name in @('start-table-card.ps1', 'start-table-card.bat', 'start-server.bat', 'start-snake.ps1', 'start-snake.bat', 'start-pokemon.ps1', 'start-pokemon.bat', 'join-table-card.ps1', 'join-table-card.bat', 'repair-startup.ps1', 'repair-startup.bat', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination (Join-Path $hostStage $name)
 }
-foreach ($name in @('start-snake.ps1', 'start-snake.bat', 'start-pokemon.ps1', 'start-pokemon.bat', 'join-table-card.ps1', 'join-table-card.bat', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
+foreach ($name in @('start-snake.ps1', 'start-snake.bat', 'start-pokemon.ps1', 'start-pokemon.bat', 'join-table-card.ps1', 'join-table-card.bat', 'repair-startup.ps1', 'repair-startup.bat', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination (Join-Path $clientStage $name)
 }
 foreach ($name in @('install-desktop-launcher.ps1', 'stop-local-server.ps1')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $hostStage "scripts/$name")
 }
 foreach ($stage in @($hostStage, $clientStage)) {
+    $checksums = foreach ($name in @('table-card.exe', 'table-card-server.exe')) {
+        $executable = Join-Path $stage "bin/$name"
+        if (Test-Path -LiteralPath $executable -PathType Leaf) {
+            (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant() + "  bin/$name"
+        }
+    }
+    [IO.File]::WriteAllText((Join-Path $stage 'PACKAGE-SHA256SUMS.txt'), ($checksums -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
     $licenses = Join-Path $stage 'licenses'
     New-Item -ItemType Directory -Path $licenses -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $projectRoot 'internal/pokemon/POKEAPI_LICENSE.md') -Destination (Join-Path $licenses 'POKEAPI_LICENSE.md')
@@ -66,6 +73,8 @@ $hostInstructions = @'
 9. 宝可梦文字冒险双击 start-pokemon.bat，纯单机离线，进度按昵称保存；全程数字菜单，详细选项见“宝可梦指令与规则.md”。
 
 使用者无需安装 Go、Docker 或 Redis。
+若启动提示“操作已被用户取消”(1223)，核对 GitHub 发布来源和 ZIP 的 SHA-256 后，可双击 repair-startup.bat，输入 1 仅解除当前包 EXE 的下载锁定，再运行原启动脚本。
+也可在下载 ZIP 的属性中解除锁定并重新解压。包内校验不等同于数字签名；本工具不会关闭系统安全保护。
 源码及许可证：https://github.com/17hwliao/Table-Card
 '@
 $clientInstructions = @'
@@ -80,6 +89,8 @@ $clientInstructions = @'
 7. 离线宝可梦文字冒险双击 start-pokemon.bat；全部行动支持数字菜单和英文字母，M地图 / C中心 / H指南（字母后按Enter），自动本地存档。
 
 玩家无需安装 Go、Docker、Redis 或其他运行环境。
+若启动提示“操作已被用户取消”(1223)，核对 GitHub 发布来源和 ZIP 的 SHA-256 后，可双击 repair-startup.bat，输入 1 仅解除当前包 EXE 的下载锁定，再运行原启动脚本。
+也可在下载 ZIP 的属性中解除锁定并重新解压。包内校验不等同于数字签名；本工具不会关闭系统安全保护。
 源码及许可证：https://github.com/17hwliao/Table-Card
 '@
 [IO.File]::WriteAllText((Join-Path $hostStage '开始使用.txt'), $hostInstructions, [Text.UTF8Encoding]::new($true))

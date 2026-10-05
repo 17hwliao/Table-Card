@@ -199,6 +199,9 @@ try {
         Write-Host '启动失败：Windows 取消了程序启动（1223），可能是下载文件的安全确认未通过。' -ForegroundColor Red
         if ($launchPath) { Write-Host "程序文件：$launchPath" -ForegroundColor Yellow }
         Write-Host '处理方法：核对文件来源后，右键程序 → 属性 → 解除锁定 → 应用，再重新运行启动脚本。' -ForegroundColor Yellow
+        if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'repair-startup.bat')) {
+            Write-Host '便携包也可双击 repair-startup.bat，核对来源后输入 1，再重新启动。' -ForegroundColor Yellow
+        }
         Write-Host '若出现 Windows 安全确认，请检查显示的程序名称并选择允许运行。' -ForegroundColor Yellow
     } else {
         Write-Host "启动失败：$message" -ForegroundColor Red
