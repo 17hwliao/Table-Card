@@ -100,6 +100,19 @@ func (m *Model) currentMode() table.Mode {
 	}
 	return ""
 }
+
+func (m *Model) syncMusicMode() {
+	if m.sound == nil {
+		return
+	}
+	mode := m.currentMode()
+	if m.page == homeScreen && !m.menuOn {
+		mode = ""
+	}
+	if err := m.sound.SetMode(mode); err != nil {
+		m.status = "声音加载失败：" + err.Error()
+	}
+}
 func (m *Model) Close() {
 	if m.pokemonGame != nil && !m.pokemonLoadError {
 		if err := m.pokemonGame.Save(); err != nil {
@@ -131,7 +144,7 @@ func (m *Model) leave() tea.Cmd {
 	m.menuOn = true
 	m.pauseUntil = 0
 	m.status = "已离桌；进行中的座位由机器人接管"
-	_ = m.sound.SetMode("")
+	m.syncMusicMode()
 	if client == nil {
 		return nil
 	}

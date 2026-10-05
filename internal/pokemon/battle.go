@@ -303,7 +303,7 @@ func (g *Game) gainExp(index, amount int) {
 	m := &g.Party[index]
 	g.say("%s得到%d经验。", m.Name(), amount)
 	m.Exp = min(1000000, m.Exp+max(1, amount))
-	for m.Level < 100 && m.Exp >= (m.Level+1)*(m.Level+1)*(m.Level+1) {
+	for m.Level < 100 && m.Exp >= ExperienceAtLevel(m.Level+1) {
 		oldHP := m.MaxHP()
 		m.Level++
 		if m.HP > 0 {

@@ -10,7 +10,9 @@
 | Oto | Audio output backend (transitive dependency) | Apache-2.0 · <https://github.com/ebitengine/oto> |
 | PokéAPI factual CSV data | Offline facts for the first 151 species: names, stats, types, capture rates, evolution triggers | BSD-3-Clause · <https://github.com/PokeAPI/pokeapi/blob/master/LICENSE.md> · license retained at `internal/pokemon/POKEAPI_LICENSE.md` (portable packages: `licenses/POKEAPI_LICENSE.md`) |
 
-The MP3 tracks in `internal/terminal/audio` were supplied by the project owner and embedded in the client at the owner's request. Their musical authorship and separate distribution terms are not asserted by the source-code license.
+The eleven MP3 recordings currently embedded in `internal/terminal/audio` are adaptations of music by Ragnar Random, published under CC0 1.0 at OpenGameArt.org. Source titles, original download URLs, mode assignments, processing details and checksums are retained in `docs/game-audio.md`, `internal/terminal/audio/catalog.json` and `internal/terminal/audio/asset-checksums.json`. The music's license is separate from the repository's GPL source-code license. CC0 text is retained at `licenses/CC0-1.0.txt` and included in both portable packages. Older owner-supplied recordings are superseded in the current distribution.
+
+Music sources: <https://opengameart.org/content/orchestral-and-world-music-pack> and <https://opengameart.org/content/fakebit-chiptune-music-pack>. Composer: Ragnar Random. The imported versions retain full compositions, are normalized in loudness and encoded as 44.1 kHz stereo MP3 at 96 kbps; pitch and tempo are unchanged.
 
 Pokémon and Pokémon character names are trademarks of Nintendo. The text adventure uses Pokémon world/species names as a fan adaptation. Its dialogues, command system, battles and save implementation were written for this project; it does not embed official artwork, audio, ROM data or dialogue scripts. The repository's software license does not claim ownership of third-party characters, trademarks or factual data.
 

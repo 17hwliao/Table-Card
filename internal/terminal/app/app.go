@@ -324,6 +324,7 @@ func (m *Model) applyEnvelope(envelope netclient.Envelope) {
 }
 
 func (m *Model) key(message tea.KeyMsg) tea.Cmd {
+	defer m.syncMusicMode()
 	key := message.String()
 	if key == "ctrl+c" {
 		if m.page == pokemonScreen {
@@ -403,7 +404,7 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 		} else if muted {
 			m.status = "声音已关闭"
 		} else {
-			m.status = "声音已开启 · M 关闭"
+			m.status = "声音已开启 · " + m.sound.Track().Title + " · M 关闭"
 		}
 		return nil
 	}

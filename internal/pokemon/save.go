@@ -131,7 +131,7 @@ func validate(s State) error {
 		}
 	}
 	checkMon := func(m Monster) bool {
-		if m.Species < 1 || m.Species > 151 || m.Level < 1 || m.Level > 100 || m.Exp < m.Level*m.Level*m.Level || m.Exp > 1000000 || m.HP < 0 || m.HP > m.MaxHP() || m.Sleep < 0 || m.Sleep > 4 {
+		if m.Species < 1 || m.Species > 151 || m.Level < 1 || m.Level > 100 || m.Exp < ExperienceAtLevel(m.Level) || m.Exp > 1000000 || m.HP < 0 || m.HP > m.MaxHP() || m.Sleep < 0 || m.Sleep > 4 {
 			return false
 		}
 		switch m.Status {

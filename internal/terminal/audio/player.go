@@ -34,7 +34,10 @@ func (p *Player) SetMode(mode table.Mode) error {
 	}
 	p.mode = mode
 	if !p.muted {
-		return p.play()
+		if err := p.play(); err != nil {
+			p.muted = true
+			return err
+		}
 	}
 	return nil
 }
@@ -70,21 +73,13 @@ func (p *Player) stop() {
 }
 func (p *Player) play() error {
 	p.stop()
-	file := "liar-bar.mp3"
-	switch p.mode {
-	case table.MahjongMode:
-		file = "mahjong.mp3"
-	case table.GoMode:
-		file = "go.mp3"
-	case table.ChessMode, table.WesternChessMode:
-		file = "chess.mp3"
-	}
+	file := TrackForMode(p.mode).File
 	stream, format, err := openLoopingTrack(file)
 	if err != nil {
 		return err
 	}
 	p.stream = stream
-	speaker.Play(&effects.Volume{Streamer: beep.Resample(4, format.SampleRate, outputRate, stream), Base: 2, Volume: -2})
+	speaker.Play(&effects.Volume{Streamer: beep.Resample(4, format.SampleRate, outputRate, stream), Base: 2, Volume: -1})
 	return nil
 }
 

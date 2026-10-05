@@ -79,7 +79,6 @@ func (m *Model) snakeKey(key string) tea.Cmd {
 		m.page = homeScreen
 		m.menuOn = true
 		m.status = "已返回贪吃蛇菜单"
-		_ = m.sound.SetMode("")
 		for i, item := range m.modes {
 			if item.ID == table.SnakeMode {
 				m.mode = i

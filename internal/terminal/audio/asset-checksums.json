@@ -1,0 +1,68 @@
+[
+  {
+    "mode": "landlord",
+    "source_sha256": "712c1d908c4c08ede51362483de48a3b709367adcd2c99cd6dafe9b9dd227ce0",
+    "mp3_sha256": "6a02a67dfc7e843ea774a2617bf819de9dc413c655f0c357f538f98f59c3556b",
+    "bytes": 1257757
+  },
+  {
+    "mode": "liar_bar",
+    "source_sha256": "55f341343fded193967f0e4bb89e061853684c8584096d8654133c90586cef5a",
+    "mp3_sha256": "63990f3fd09930256e70ada33c4bff5852e38888b96ee19ed0f37647636c94ad",
+    "bytes": 922362
+  },
+  {
+    "mode": "mahjong",
+    "source_sha256": "d344fded526a468935e264816e4105550cf19d92f37fbc36d4cacd10007792c8",
+    "mp3_sha256": "3c566203284c74e485b0443fa8f3ea4a525669f9a430885fe6e4580bc29992ed",
+    "bytes": 798508
+  },
+  {
+    "mode": "chess",
+    "source_sha256": "8c354024e980da98d3fb228c75c6e2c7a18e8d12c495691f6fd7a6b3034c9291",
+    "mp3_sha256": "80171be274a869973fb1864e4cb2e68e690e10a7f23ca93fe02a961463097d81",
+    "bytes": 576896
+  },
+  {
+    "mode": "western_chess",
+    "source_sha256": "6de2a34922c49e3f154704c3fed8ad4907548b3dcd2755131ae461823463f77b",
+    "mp3_sha256": "84e303f3b63f04c002e11eb972574220929fc6df9b983a21548efd4a259861ed",
+    "bytes": 922333
+  },
+  {
+    "mode": "gomoku",
+    "source_sha256": "e4002b38f1132b916fadc8527b8861b7bc492350102ed5d152ff23224c3af599",
+    "mp3_sha256": "4d82b55091a1226f72bc46abec1c3fbcfab646957cabf4e84ac70d4f2cc1da3e",
+    "bytes": 1075951
+  },
+  {
+    "mode": "go",
+    "source_sha256": "8d51840d9c010bb9865cdc47dc74302869a37429ef5e3883878370e8ff58de43",
+    "mp3_sha256": "ab0728d14818a78b79bbd87a3d627a94a1beabd5da2b24d41a41e19d575fd13b",
+    "bytes": 1571835
+  },
+  {
+    "mode": "uno",
+    "source_sha256": "6a788aae2333076c6e2454290a88c0c0b7f194f913fa0e96958aa0e514e6103d",
+    "mp3_sha256": "97c1ba4c5839872f2daf5a82706316765921cfaedb45d710eeee5d9e2da1eb65",
+    "bytes": 2222919
+  },
+  {
+    "mode": "tetris",
+    "source_sha256": "46873f9e44a5b503612bb44a773d112c5549fcaa1252d8309b6f093ad7257dee",
+    "mp3_sha256": "9dd9f0941d9eb58b66ce38b6e1d5054ca014d49032e8fbe4902002cad00e5257",
+    "bytes": 549924
+  },
+  {
+    "mode": "snake",
+    "source_sha256": "a29fe26883867632ecd4ff253a401dc0154b761046ddcd56d1922a8b67ebd38d",
+    "mp3_sha256": "d0b752211cfdba0476a6d915b8192ca4bf7796dbfe318d11eda839335ff2edb7",
+    "bytes": 271883
+  },
+  {
+    "mode": "pokemon",
+    "source_sha256": "087a3ba426dfed19f28547254b126795c734dea7e933a913a42ffaacf52c4582",
+    "mp3_sha256": "8462bae14df009ae8818235e8a5fc758fa6c0da65fec7f6c05cd1ff47b659e1c",
+    "bytes": 1317320
+  }
+]

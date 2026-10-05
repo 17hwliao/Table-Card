@@ -124,7 +124,6 @@ func (m *Model) pokemonKey(message tea.KeyMsg) tea.Cmd {
 		m.menuOn = true
 		m.pokemonInput.Blur()
 		m.status = "冒险已保存，返回宝可梦菜单"
-		_ = m.sound.SetMode("")
 		for i, item := range m.modes {
 			if item.ID == table.PokemonMode {
 				m.mode = i
@@ -152,7 +151,7 @@ func (m *Model) pokemonKey(message tea.KeyMsg) tea.Cmd {
 		} else if silent {
 			m.status = "声音已关闭"
 		} else {
-			m.status = "声音已开启 · F9关闭"
+			m.status = "声音已开启 · " + m.sound.Track().Title + " · F9关闭"
 		}
 		return nil
 	case "pgup":

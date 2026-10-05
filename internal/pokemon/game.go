@@ -21,7 +21,7 @@ func (m Monster) Name() string      { return Dex[m.Species].Name }
 func (m Monster) MaxHP() int        { return ((Dex[m.Species].HP+8)*2*m.Level)/100 + m.Level + 10 }
 func (m Monster) stat(base int) int { return ((base+8)*2*m.Level)/100 + 5 }
 func newMonster(id, level int) Monster {
-	m := Monster{Species: id, Level: level, Exp: level * level * level, Moves: moveSet(id, level)}
+	m := Monster{Species: id, Level: level, Exp: ExperienceAtLevel(level), Moves: moveSet(id, level)}
 	m.HP = m.MaxHP()
 	for i, n := range m.Moves {
 		m.PP[i] = Moves[n].PP
@@ -124,13 +124,17 @@ func (g *Game) Command(input string) error {
 	}
 	if command == "帮助" || command == "help" {
 		g.say("探索：grass / challenge / gym / story / next / go 1–12 / map / league / legend 150。")
-		g.say("战斗：move 1–4 / catch 1–4 / switch 1–6 / use potion 1 / run。")
+		g.say("战斗：move 1–4 / catch 1–4 / switch 1–6 / use potion 1 / run / opponent查看队伍数量。")
 		g.say("管理：party / bag / shop / buy pokeball 5 / heal / dex 1 / box / deposit 2 / withdraw 1 / evolve thunderstone 1 / trade 1。")
 		g.say("支线：quest / quest 1–3；专属技：train 1–6。所有功能也可用数字菜单选择；F5存档，new yes确认重置。")
 		return nil
 	}
 	if command == "队伍" || command == "party" {
 		g.partyInfo()
+		return nil
+	}
+	if command == "opponent" {
+		g.say("%s", g.OpponentInfo())
 		return nil
 	}
 	if command == "背包" || command == "bag" {
@@ -314,6 +318,8 @@ func (g *Game) heal() {
 func (g *Game) partyInfo() {
 	for i, m := range g.Party {
 		g.say("%d. %s Lv%d HP %d/%d [%s]", i+1, m.Name(), m.Level, m.HP, m.MaxHP(), statusName(m.Status))
+		g.say("%s", m.ExperienceSummary())
+		g.say("%s", m.EvolutionSummary())
 		for j, id := range m.Moves {
 			move := Moves[id]
 			g.say("  招式%d %s [%s] PP %d/%d", j+1, move.Name, TypeNames[move.Type], m.PP[j], move.PP)

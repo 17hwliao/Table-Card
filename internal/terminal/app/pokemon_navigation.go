@@ -126,10 +126,10 @@ func (m *Model) pokemonChoose(input string) tea.Cmd {
 		}
 		command, next, target = choice.Command, choice.Panel, choice.Target
 	} else if !strings.Contains(input, " ") {
-		shortcuts := map[string]string{"m": "map", "map": "map", "w": "world", "c": "center", "h": "guide", "help": "guide", "p": "party", "party": "party", "b": "bag", "bag": "bag", "q": "quest", "quest": "quest", "shop": "shop", "box": "pc", "dex": "dex"}
+		shortcuts := map[string]string{"m": "map", "map": "map", "w": "world", "c": "center", "h": "guide", "help": "guide", "p": "party", "party": "party", "b": "bag", "bag": "bag", "q": "quest", "quest": "quest", "v": "opponent", "opponent": "opponent", "shop": "shop", "box": "pc", "dex": "dex"}
 		if panel, ok := shortcuts[input]; ok {
-			if m.pokemonGame.Battle != nil && panel != "party" && panel != "bag" && panel != "guide" {
-				m.status = "战斗中：1–4招式；B背包 / P队伍 / catch 1 投球 / run 逃跑"
+			if m.pokemonGame.Battle != nil && panel != "party" && panel != "bag" && panel != "guide" && panel != "opponent" {
+				m.status = "战斗中：1–4招式；B背包 / P队伍 / V对手 / catch 1 投球 / run 逃跑"
 				return nil
 			}
 			if m.pokemonLoadError {
@@ -255,11 +255,15 @@ func (m *Model) pokemonView() string {
 	var info string
 	if b := g.Battle; b != nil {
 		p, f := g.Party[b.Active], b.Foes[b.Enemy]
-		info = fmt.Sprintf("对手 %s Lv%d\n%s [%s]\n伙伴 %s Lv%d\n%s [%s]\n对战：%s", f.Name(), f.Level, hpBar(f.HP, f.MaxHP()), f.Status, p.Name(), p.Level, hpBar(p.HP, p.MaxHP()), p.Status, b.Name)
+		total, remaining, _ := b.OpponentCounts()
+		info = fmt.Sprintf("对手剩余 %d/%d 只 · 出场 %d/%d\n%s Lv%d\n%s [%s]\n伙伴 %s Lv%d\n%s [%s]\n对战：%s", remaining, total, b.Enemy+1, total, f.Name(), f.Level, hpBar(f.HP, f.MaxHP()), f.Status, p.Name(), p.Level, hpBar(p.HP, p.MaxHP()), p.Status, b.Name)
 		if g.Busy() {
 			info += "\n精灵球 " + strings.Repeat("● ", g.Capture.Step) + strings.Repeat("○ ", 3-g.Capture.Step) + "摇动中"
 		}
-		if m.pokemonPanel != "battle" {
+		if m.pokemonPanel == "detail" || m.pokemonPanel == "opponent" {
+			// Put the requested status first, including on small terminals.
+			info = g.PanelInfo(m.pokemonPanel, m.pokemonTarget) + "\n\n" + info
+		} else if m.pokemonPanel != "battle" {
 			info += "\n" + g.PanelInfo(m.pokemonPanel, m.pokemonTarget)
 		}
 	} else if m.pokemonPanel == "map" || m.pokemonPanel == "world" {
@@ -314,7 +318,8 @@ func (m *Model) pokemonView() string {
 const pokemonRules = `宝可梦 · 数字菜单文字冒险
 输入本页数字 + Enter；[ / ] 翻页，0 / Esc 返回。
 M 地区地图 / C 城市中心 / W 世界地图 / H 指南。
-P 队伍 / B 背包 / Q 支线；字母也需 Enter。
+P 队伍 / B 背包 / Q 支线 / V 对手；字母也需 Enter。
+伙伴详情显示升级经验和进化条件；↑↓阅读。
 初始伙伴1妙蛙种子 / 2小火龙 / 3杰尼龟。
 主线每章六名训练者 → 剧情 → 道馆 → 下一章。
 战斗1–4招式；菜单提供球种、药品、换人和逃跑。

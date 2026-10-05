@@ -113,6 +113,7 @@ func (g *Game) Choices(panel string, target int) []Choice {
 		add("逃离野生遭遇", "run", "root", 0)
 		out[len(out)-1].Enabled = g.Battle.Kind == "wild"
 		add("查看伙伴信息", "", "party", 0)
+		add("查看对手队伍数量", "", "opponent", 0)
 	case "root":
 		add("地区地图 / 探索建筑", "", "map", 0)
 		add("返回城市中心", "visit 1", "center", 0)
@@ -241,6 +242,8 @@ func (g *Game) Choices(panel string, target int) []Choice {
 			}
 			add(fmt.Sprintf("%s Lv%d · HP %d/%d", p.Name(), p.Level, p.HP, p.MaxHP()), command, next, value)
 		}
+	case "opponent":
+		add("返回对战行动", "", "battle", 0)
 	case "detail":
 		if target < 0 || target >= len(g.Party) {
 			return nil
@@ -306,7 +309,7 @@ func (g *Game) arenaCommand() string {
 	return "gym"
 }
 
-var panelNames = map[string]string{"root": "冒险行动", "battle": "对战行动", "center": "城市中心", "map": "地区地图 · 建筑编号", "world": "关都世界地图", "guide": "旅行指南", "shop": "城市中心商店", "quantity": "购买数量", "bag": "背包", "balls": "选择精灵球", "party": "队伍", "switch": "替换伙伴", "detail": "伙伴详情", "pc": "电脑", "deposit": "存入电脑", "withdraw": "取出伙伴", "dex": "151种图鉴", "dex-detail": "物种资料", "training": "专属技教学", "use-target": "药品使用对象", "evolve-target": "进化石使用对象", "legends": "冠军后传说调查", "quest": "当地居民的委托", "reset": "新冒险确认"}
+var panelNames = map[string]string{"root": "冒险行动", "battle": "对战行动", "opponent": "对手队伍", "center": "城市中心", "map": "地区地图 · 建筑编号", "world": "关都世界地图", "guide": "旅行指南", "shop": "城市中心商店", "quantity": "购买数量", "bag": "背包", "balls": "选择精灵球", "party": "队伍", "switch": "替换伙伴", "detail": "伙伴详情", "pc": "电脑", "deposit": "存入电脑", "withdraw": "取出伙伴", "dex": "151种图鉴", "dex-detail": "物种资料", "training": "专属技教学", "use-target": "药品使用对象", "evolve-target": "进化石使用对象", "legends": "冠军后传说调查", "quest": "当地居民的委托", "reset": "新冒险确认"}
 
 func (g *Game) PanelTitle(panel string, target int) string {
 	if len(g.Party) == 0 && panel != "reset" {
@@ -331,11 +334,14 @@ func (g *Game) PanelInfo(panel string, target int) string {
 		}
 		p := g.Party[target]
 		var rows []string
-		rows = append(rows, fmt.Sprintf("%s Lv%d · %s", p.Name(), p.Level, statusName(p.Status)))
+		rows = append(rows, fmt.Sprintf("%s Lv%d · %s\nHP %d/%d", p.Name(), p.Level, statusName(p.Status), p.HP, p.MaxHP()))
+		rows = append(rows, p.ExperienceSummary(), p.EvolutionSummary())
 		for i, id := range p.Moves {
 			rows = append(rows, fmt.Sprintf("%d %s [%s] PP %d/%d", i+1, Moves[id].Name, TypeNames[Moves[id].Type], p.PP[i], Moves[id].PP))
 		}
 		return strings.Join(rows, "\n")
+	case "opponent":
+		return g.OpponentInfo()
 	case "dex-detail":
 		if target < 1 || target > 151 {
 			return "物种编号1–151"
