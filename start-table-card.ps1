@@ -167,6 +167,7 @@ try {
         New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
         $logPath = Join-Path $runtimeDir "server-$Port.log"
         $errorPath = Join-Path $runtimeDir "server-$Port-error.log"
+        $launchPath = $serverPath
         $backend = Start-Process -FilePath $serverPath -ArgumentList @('-listen', ":$Port") `
             -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput $logPath -RedirectStandardError $errorPath -PassThru
         [pscustomobject]@{ ProcessId = $backend.Id; Executable = $serverPath; Started = $backend.StartTime.ToUniversalTime().ToString('o'); Port = $Port } |
@@ -184,6 +185,7 @@ try {
     if (-not $ServerOnly) {
         Write-Host "正在打开 $Clients 个终端窗口，服务器：$address"
         for ($index = 1; $index -le $Clients; $index++) {
+            $launchPath = $clientPath
             Start-Process -FilePath $clientPath -ArgumentList @('-server', $address, '-name', "玩家$index") -WorkingDirectory $projectRoot -WindowStyle Normal | Out-Null
             Start-Sleep -Milliseconds 150
         }
@@ -192,6 +194,14 @@ try {
         Write-Host "服务保持后台运行，可再次双击脚本增加客户端。停止命令：.\scripts\stop-local-server.ps1 -Port $Port"
     }
 } catch {
-    Write-Host "启动失败：$($_.Exception.Message)" -ForegroundColor Red
+    $message = $_.Exception.Message
+    if ($message -match '(?i)operation was cancel[l]?ed by the user|操作已被用户取消') {
+        Write-Host '启动失败：Windows 取消了程序启动（1223），可能是下载文件的安全确认未通过。' -ForegroundColor Red
+        if ($launchPath) { Write-Host "程序文件：$launchPath" -ForegroundColor Yellow }
+        Write-Host '处理方法：核对文件来源后，右键程序 → 属性 → 解除锁定 → 应用，再重新运行启动脚本。' -ForegroundColor Yellow
+        Write-Host '若出现 Windows 安全确认，请检查显示的程序名称并选择允许运行。' -ForegroundColor Yellow
+    } else {
+        Write-Host "启动失败：$message" -ForegroundColor Red
+    }
     exit 1
 }
