@@ -91,7 +91,10 @@ func (*Controller) View(s ui.Snapshot) string {
 		}
 	}
 	p := v.Players[mine]
-	status := "堆到顶部淘汰 · 最后存活者获胜"
+	status := fmt.Sprintf("Lv%d · %dms/格 · 已过 %ds · 堆到顶部淘汰", max(1, v.Level), v.DropMS, v.ElapsedSeconds)
+	if v.NextLevelIn > 0 {
+		status += fmt.Sprintf(" · %ds后加速", v.NextLevelIn)
+	}
 	if !v.Started {
 		remaining := max(int64(1), (v.StartAt-time.Now().UnixMilli()+999)/1000)
 		status = fmt.Sprintf("准备 %d 秒 · 所有玩家使用相同方块序列", remaining)

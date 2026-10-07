@@ -64,6 +64,9 @@ func (e *Engine) BotAction(playerID string) json.RawMessage {
 					if g.last != nil && g.last.From == to {
 						value -= 15
 					}
+					if g.positions[positionKey(next, other)].count > 0 {
+						value -= 100
+					}
 					if value > best {
 						best = value
 						chosen = &Move{From: from, To: to}

@@ -201,7 +201,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case modesLoaded:
 		if msg.err != nil {
 			if m.page == homeScreen {
-				m.status = "服务未连接 · 0 贪吃蛇 / P 宝可梦可离线玩 · F5 重连"
+				m.status = "服务未连接：" + msg.err.Error() + " · 0/P 可离线玩 · F5 重连"
 			}
 			return m, nil
 		}
@@ -324,6 +324,9 @@ func (m *Model) applyEnvelope(envelope netclient.Envelope) {
 				m.sound.Effect(seed)
 			}
 		}
+		if m.control != nil && newRound(m.game, envelope.Game) {
+			m.control.Reset()
+		}
 		m.game = append(m.game[:0], envelope.Game...)
 		m.pauseUntil = envelope.PauseUntil
 		if m.room.Phase == table.InProgress {
@@ -344,6 +347,21 @@ func (m *Model) applyEnvelope(envelope netclient.Envelope) {
 	case "error":
 		m.status = envelope.Error
 	}
+}
+
+// Clear stale card selections when an engine starts another round or match.
+func newRound(previous, next json.RawMessage) bool {
+	type boundary struct {
+		Round    int             `json:"round"`
+		Finished bool            `json:"finished"`
+		Phase    json.RawMessage `json:"phase"`
+	}
+	var old, current boundary
+	if len(previous) == 0 || json.Unmarshal(previous, &old) != nil || json.Unmarshal(next, &current) != nil {
+		return false
+	}
+	return old.Round != current.Round || (old.Finished && !current.Finished) ||
+		(string(old.Phase) == "3" && string(current.Phase) == "0")
 }
 
 func (m *Model) key(message tea.KeyMsg) tea.Cmd {
@@ -427,6 +445,9 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 		return cmd
 	}
 	if key == "m" {
+		if pressed, ok := message.(tea.KeyPressMsg); ok && pressed.IsRepeat {
+			return nil
+		}
 		muted, err := m.sound.Toggle()
 		if err != nil {
 			m.status = "无法开启声音：" + err.Error()
@@ -453,6 +474,14 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 	}
 	if m.pending {
 		return nil
+	}
+	if pressed, ok := message.(tea.KeyPressMsg); ok && pressed.IsRepeat {
+		// Movement may repeat; confirmations, hard drops and menu selections
+		// are single press actions so a held key cannot play the next piece.
+		navigation := key == "left" || key == "right" || key == "up" || key == "down" || key == "h" || key == "j" || key == "k" || key == "l" || key == "w" || key == "a" || key == "s" || key == "d"
+		if m.page != gameScreen || !navigation || (m.room.Mode == table.TetrisMode && (key == "up" || key == "down" || key == "w")) {
+			return nil
+		}
 	}
 
 	switch m.page {

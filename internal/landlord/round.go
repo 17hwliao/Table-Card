@@ -43,6 +43,7 @@ type Round struct {
 	passes      int
 	multiplier  int
 	winner      int
+	plays       [3]int
 }
 
 func NewRound() *Round {
@@ -108,7 +109,7 @@ func (r *Round) Bid(seat, value int) error {
 		r.highestSeat = seat
 	}
 	r.bidCount++
-	if r.bidCount < 3 {
+	if r.bidCount < 3 && r.highestBid < 3 {
 		r.turn = (seat + 1) % len(r.hands)
 		return nil
 	}
@@ -161,12 +162,16 @@ func (r *Round) Play(seat int, selected []cards.Card) error {
 		return ErrNotOwned
 	}
 	r.hands[seat] = remaining
+	r.plays[seat]++
 	r.trick = &Trick{Seat: seat, Cards: append([]cards.Card(nil), selected...), Pattern: pattern}
 	r.passes = 0
 	if pattern.Kind == Bomb || pattern.Kind == Rocket {
 		r.multiplier *= 2
 	}
 	if len(remaining) == 0 {
+		if (seat == r.landlord && r.plays[(r.landlord+1)%3] == 0 && r.plays[(r.landlord+2)%3] == 0) || (seat != r.landlord && r.plays[r.landlord] == 1) {
+			r.multiplier *= 2 // Spring or reverse spring.
+		}
 		r.phase = Complete
 		r.winner = seat
 		return nil

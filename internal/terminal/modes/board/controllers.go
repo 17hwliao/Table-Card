@@ -42,10 +42,11 @@ type chineseState struct {
 			Y int `json:"y"`
 		} `json:"to"`
 	} `json:"lastMove"`
-	InCheck bool   `json:"inCheck"`
-	Winner  string `json:"winner"`
-	Draw    bool   `json:"draw"`
-	Moves   int    `json:"moves"`
+	InCheck    bool   `json:"inCheck"`
+	Winner     string `json:"winner"`
+	Draw       bool   `json:"draw"`
+	Moves      int    `json:"moves"`
+	DrawReason string `json:"drawReason"`
 }
 type chessState struct {
 	Board [8][8]struct {
@@ -72,10 +73,13 @@ type chessState struct {
 	DrawReason string `json:"drawReason"`
 }
 type goState struct {
-	Board      [19][19]uint8 `json:"board"`
-	Turn       uint8         `json:"turn"`
-	TurnPlayer string        `json:"turnPlayer"`
-	LastMove   *struct {
+	Scoring       bool          `json:"scoring"`
+	Dead          [19][19]bool  `json:"dead"`
+	ScoreAccepted [2]bool       `json:"scoreAccepted"`
+	Board         [19][19]uint8 `json:"board"`
+	Turn          uint8         `json:"turn"`
+	TurnPlayer    string        `json:"turnPlayer"`
+	LastMove      *struct {
 		X    int  `json:"x"`
 		Y    int  `json:"y"`
 		Pass bool `json:"pass"`
@@ -137,6 +141,9 @@ func (c *ChineseChess) View(s ui.Snapshot) string {
 	}
 	turn := sideName(g.Turn, "红方", "黑方")
 	status := turnStatus(s.PlayerID, g.TurnPlayer, g.Winner, g.Draw, g.Moves, g.Turn, "红方", "黑方")
+	if g.DrawReason != "" {
+		status += " · " + g.DrawReason
+	}
 	if g.InCheck && g.Winner == "" {
 		status += " · 将军"
 	}
@@ -186,10 +193,20 @@ func (c *Go) View(s ui.Snapshot) string {
 	if g.Finished {
 		status += fmt.Sprintf(" · 数子 黑 %.1f : 白 %.1f", g.BlackScore, g.WhiteScore)
 	}
+	if g.Scoring {
+		status = fmt.Sprintf("死子协商 · 黑 %.1f : 白 %.1f · 已确认 黑%t/白%t · Enter标死子 C确认 R继续", g.BlackScore, g.WhiteScore, g.ScoreAccepted[0], g.ScoreAccepted[1])
+	}
 	if g.LastMove != nil && g.LastMove.Pass {
 		status += " · 上一手 Pass"
 	}
+	controls := "鼠标点击落子 · Enter 确认 · P 停一手"
+	if g.Scoring {
+		controls = "点击/Enter 切换整组死子 · C 确认结果 · R 恢复行棋"
+	}
 	return gridView("围棋 · 19 路", 19, 19, c.x, c.y, nil, func(x, y int) string {
+		if g.Dead[y][x] {
+			return "×"
+		}
 		switch g.Board[y][x] {
 		case 1:
 			return "●"
@@ -201,7 +218,7 @@ func (c *Go) View(s ui.Snapshot) string {
 			}
 			return "+"
 		}
-	}, status, "鼠标点击落子 · Enter 确认 · P 停一手", "")
+	}, status, controls, "")
 }
 
 func (c *Gomoku) Key(s ui.Snapshot, key string) ui.Result {
@@ -314,6 +331,19 @@ func (c *Go) Key(s ui.Snapshot, key string) ui.Result {
 		return ui.Result{Handled: true, Status: "本局已结束"}
 	}
 	moveCursor(&c.x, &c.y, 19, 19, key)
+	if g.Scoring {
+		switch strings.ToLower(key) {
+		case "c":
+			return ui.Result{Handled: true, Action: ui.Action(map[string]any{"type": "accept_score"})}
+		case "r":
+			return ui.Result{Handled: true, Action: ui.Action(map[string]any{"type": "resume"})}
+		case "enter", " ":
+			return ui.Result{Handled: true, Action: ui.Action(map[string]any{"type": "mark_dead", "x": c.x, "y": c.y})}
+		case "p":
+			return ui.Result{Handled: true, Status: "请按 C 确认数子，或 R 恢复行棋"}
+		}
+		return handledMove(key)
+	}
 	if strings.EqualFold(key, "p") {
 		return ui.Result{Handled: true, Action: ui.Action(map[string]any{"type": "pass"})}
 	}

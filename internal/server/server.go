@@ -67,12 +67,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/connection-info", s.connectionInfo)
 	mux.HandleFunc("GET /api/modes", s.listModes)
-	mux.HandleFunc("POST /api/rooms", s.createRoom)
+	mux.HandleFunc("POST /api/rooms", bufferedHTTP(s.createRoom))
 	mux.HandleFunc("GET /api/rooms", s.listRooms)
-	mux.HandleFunc("POST /api/match", s.quickMatch)
-	mux.HandleFunc("GET /api/stats", s.playerStats)
+	mux.HandleFunc("POST /api/match", bufferedHTTP(s.quickMatch))
+	mux.HandleFunc("GET /api/stats", bufferedHTTP(s.playerStats))
 	mux.HandleFunc("GET /api/rooms/{code}/ws", s.roomWebSocket)
-	mux.HandleFunc("/api/rooms/", s.roomRoute)
+	mux.HandleFunc("/api/rooms/", bufferedHTTP(s.roomRoute))
 	return mux
 }
 
@@ -86,7 +86,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "table-card", "protocol": "2"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "table-card", "protocol": "2", "rulesVersion": table.RulesVersion})
 }
 
 func (s *Server) listModes(w http.ResponseWriter, _ *http.Request) {
@@ -105,6 +105,10 @@ type createRoomRequest struct {
 func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
+	if r.Context().Err() != nil {
+		writeError(w, http.StatusRequestTimeout, "请求已取消")
+		return
+	}
 	var request createRoomRequest
 	if !readJSON(w, r, &request) {
 		return
@@ -155,6 +159,10 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
+	if r.Context().Err() != nil {
+		writeError(w, http.StatusRequestTimeout, "请求已取消")
+		return
+	}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) < 3 || parts[0] != "api" || parts[1] != "rooms" {
 		http.NotFound(w, r)
@@ -222,6 +230,25 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 		old, exists := s.findEngine(parts[2])
 		if !exists || !gameFinished(old) {
 			writeError(w, 409, "当前对局尚未结束")
+			return
+		}
+		mode := room.Snapshot().Mode
+		continued := mode == table.MahjongMode || (mode == table.UNOMode && gameMap(old)["seriesWinner"] == "")
+		if continued {
+			if _, err := old.Apply(request.PlayerID, json.RawMessage(`{"type":"next_round"}`)); err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
+			rt := s.runtime[parts[2]]
+			if rt == nil {
+				rt = newRoomRuntime()
+				s.runtime[parts[2]] = rt
+			}
+			rt.finished = false
+			rt.nextBot = time.Now().Add(3 * time.Second)
+			rt.pauseUntil = time.Time{}
+			s.broadcastGameState(parts[2], room, old)
+			writeJSON(w, http.StatusOK, room.Snapshot())
 			return
 		}
 		engine, err := s.configuredEngine(room.Snapshot())

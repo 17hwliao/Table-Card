@@ -163,7 +163,10 @@ func (g *Game) Move(playerID string, from, to Point, promotion Kind) (Snapshot, 
 	if g.winner == "" && !g.draw {
 		key := positionKey(g.position, g.turn)
 		g.positions[key]++
-		if g.positions[key] >= 3 {
+		if insufficientMaterial(g.position.board) {
+			g.draw = true
+			g.drawReason = "子力不足，无法将死"
+		} else if g.positions[key] >= 3 {
 			g.draw = true
 			g.drawReason = "三次重复局面"
 		} else if g.halfmove >= 100 {
@@ -200,13 +203,57 @@ func positionKey(pos position, turn Side) string {
 	key.WriteByte(byte(pos.castling[0]))
 	key.WriteByte(byte(pos.castling[1]))
 	key.WriteByte(byte(turn))
-	if pos.enPassant == nil {
+	if !hasLegalEnPassant(pos, turn) {
 		key.WriteByte(0)
 	} else {
 		key.WriteByte(byte(pos.enPassant.X + 1))
 		key.WriteByte(byte(pos.enPassant.Y + 1))
 	}
 	return key.String()
+}
+
+// Only a legally available en-passant move distinguishes repeated positions.
+// A nominal target after a double pawn push is insufficient (including pins).
+func hasLegalEnPassant(pos position, side Side) bool {
+	if pos.enPassant == nil {
+		return false
+	}
+	direction := -1
+	if side == Black {
+		direction = 1
+	}
+	for _, dx := range []int{-1, 1} {
+		from := Point{pos.enPassant.X + dx, pos.enPassant.Y - direction}
+		if inside(from) && pos.board[from.Y][from.X] == (Piece{Side: side, Kind: Pawn}) && legalMove(pos, side, from, *pos.enPassant, 0) {
+			return true
+		}
+	}
+	return false
+}
+
+func insufficientMaterial(board [BoardSize][BoardSize]Piece) bool {
+	minor, knights, bishopColor := 0, 0, -1
+	for y := range board {
+		for x, piece := range board[y] {
+			switch piece.Kind {
+			case Empty, King:
+			case Knight:
+				minor++
+				knights++
+			case Bishop:
+				minor++
+				color := (x + y) % 2
+				if bishopColor == -1 {
+					bishopColor = color
+				} else if bishopColor != color {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+	}
+	return minor <= 1 || knights == 0
 }
 
 func legalMove(pos position, side Side, from, to Point, promotion Kind) bool {

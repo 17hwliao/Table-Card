@@ -50,14 +50,15 @@ type Move struct {
 }
 
 type Snapshot struct {
-	Board    [Ranks][Files]Piece `json:"board"`
-	Turn     Side                `json:"turn"`
-	TurnID   string              `json:"turnPlayer"`
-	LastMove *Move               `json:"lastMove,omitempty"`
-	InCheck  bool                `json:"inCheck"`
-	Winner   string              `json:"winner,omitempty"`
-	Draw     bool                `json:"draw"`
-	Moves    int                 `json:"moves"`
+	Board      [Ranks][Files]Piece `json:"board"`
+	Turn       Side                `json:"turn"`
+	TurnID     string              `json:"turnPlayer"`
+	LastMove   *Move               `json:"lastMove,omitempty"`
+	InCheck    bool                `json:"inCheck"`
+	Winner     string              `json:"winner,omitempty"`
+	Draw       bool                `json:"draw"`
+	Moves      int                 `json:"moves"`
+	DrawReason string              `json:"drawReason,omitempty"`
 }
 
 var (
@@ -67,14 +68,17 @@ var (
 )
 
 type Game struct {
-	mu      sync.RWMutex
-	players [2]table.Player
-	board   [Ranks][Files]Piece
-	turn    Side
-	last    *Move
-	winner  string
-	draw    bool
-	moves   int
+	mu         sync.RWMutex
+	players    [2]table.Player
+	board      [Ranks][Files]Piece
+	turn       Side
+	last       *Move
+	winner     string
+	draw       bool
+	moves      int
+	drawReason string
+	positions  map[string]positionOccurrence
+	history    []checkEvent
 }
 
 func New(players []table.Player) (*Game, error) {
@@ -83,6 +87,7 @@ func New(players []table.Player) (*Game, error) {
 	}
 	g := &Game{turn: Red, players: [2]table.Player{players[0], players[1]}}
 	setupBoard(&g.board)
+	g.positions = map[string]positionOccurrence{positionKey(g.board, g.turn): {count: 1}}
 	return g, nil
 }
 
@@ -130,13 +135,31 @@ func (g *Game) Move(playerID string, from, to Point) (Snapshot, error) {
 			winnerSide = Black
 		}
 		g.winner = g.players[int(winnerSide)-1].ID
+	} else {
+		// A capture or a soldier's forward move is irreversible; older
+		// positions cannot recur and need not occupy memory.
+		if previous.Kind != Empty || (piece.Kind == Soldier && from.Y != to.Y) {
+			g.positions = make(map[string]positionOccurrence)
+			g.history = nil
+		}
+		g.history = append(g.history, checkEvent{side: piece.Side, check: inCheck(g.board, g.turn)})
+		key := positionKey(g.board, g.turn)
+		entry, exists := g.positions[key]
+		if !exists {
+			entry.first = len(g.history)
+		}
+		entry.count++
+		g.positions[key] = entry
+		if entry.count >= 3 {
+			g.finishRepetition(entry.first)
+		}
 	}
 
 	return g.snapshotLocked(), nil
 }
 
 func (g *Game) snapshotLocked() Snapshot {
-	view := Snapshot{Board: g.board, Turn: g.turn, InCheck: inCheck(g.board, g.turn), Winner: g.winner, Draw: g.draw, Moves: g.moves}
+	view := Snapshot{Board: g.board, Turn: g.turn, InCheck: inCheck(g.board, g.turn), Winner: g.winner, Draw: g.draw, Moves: g.moves, DrawReason: g.drawReason}
 	if g.winner == "" && !g.draw {
 		view.TurnID = g.players[int(g.turn)-1].ID
 	}

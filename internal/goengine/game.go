@@ -24,6 +24,9 @@ type Move struct {
 	Pass bool `json:"pass,omitempty"`
 }
 type Snapshot struct {
+	Scoring           bool                        `json:"scoring"`
+	Dead              [BoardSize][BoardSize]bool  `json:"dead"`
+	ScoreAccepted     [2]bool                     `json:"scoreAccepted"`
 	Board             [BoardSize][BoardSize]uint8 `json:"board"`
 	Turn              uint8                       `json:"turn"`
 	TurnPlayer        string                      `json:"turnPlayer"`
@@ -51,6 +54,9 @@ type Game struct {
 	finished bool
 	winner   string
 	draw     bool
+	scoring  bool
+	dead     [BoardSize][BoardSize]bool
+	accepted [2]bool
 }
 
 func New(players []table.Player) (*Game, error) {
@@ -67,6 +73,9 @@ func (g *Game) Play(playerID string, x, y int, pass bool) (Snapshot, error) {
 	defer g.mu.Unlock()
 	if g.finished {
 		return Snapshot{}, errors.New("对局已经结束")
+	}
+	if g.scoring {
+		return Snapshot{}, errors.New("正在确认死子：Enter标记，C确认，R恢复行棋")
 	}
 	if g.players[int(g.turn)-1].ID != playerID {
 		return Snapshot{}, errors.New("当前不是该玩家的回合")
@@ -94,15 +103,30 @@ func (g *Game) Play(playerID string, x, y int, pass bool) (Snapshot, error) {
 	return g.snapshotLocked(), nil
 }
 
-func (g *Game) finishLocked() { g.finished = true }
+func (g *Game) finishLocked() {
+	g.scoring = true
+	g.dead = [BoardSize][BoardSize]bool{}
+	g.accepted = [2]bool{}
+}
 
 // score fields are derived from the final position and exposed through snapshotLocked.
 func (g *Game) snapshotLocked() Snapshot {
-	black, white := score(g.board)
+	counted := g.board
+	for y := range counted {
+		for x := range counted[y] {
+			if g.dead[y][x] {
+				counted[y][x] = Empty
+			}
+		}
+	}
+	black, white := score(counted)
 	white += 7.5
 	view := Snapshot{Board: g.board, Turn: g.turn, Captures: g.captures, Moves: g.moves, ConsecutivePasses: g.passes, Finished: g.finished, Winner: g.winner, Draw: g.draw, BlackScore: black, WhiteScore: white}
-	if !g.finished {
+	view.Scoring, view.Dead, view.ScoreAccepted = g.scoring, g.dead, g.accepted
+	if !g.finished && !g.scoring {
 		view.TurnPlayer = g.players[int(g.turn)-1].ID
+	} else if !g.finished {
+		// Scores during agreement are estimates, never a declared winner.
 	} else if g.winner != "" {
 		view.Winner = g.winner
 	} else if black > white {
@@ -234,6 +258,9 @@ func (e *Engine) Apply(playerID string, payload json.RawMessage) (any, error) {
 	}
 	if a.Type == "resign" {
 		return e.resign(playerID)
+	}
+	if a.Type == "mark_dead" || a.Type == "accept_score" || a.Type == "resume" {
+		return e.game.scoringAction(playerID, a.Type, a.X, a.Y)
 	}
 	if a.Type != "play" && a.Type != "pass" {
 		return nil, errors.New("围棋操作类型必须是 play 或 pass")

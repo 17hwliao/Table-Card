@@ -26,6 +26,7 @@ type statStore struct {
 	mu      sync.Mutex
 	path    string
 	entries map[string]statistic
+	loadErr error
 }
 
 func newStatStore() *statStore {
@@ -36,10 +37,17 @@ func newStatStore() *statStore {
 	}
 	s := &statStore{path: filepath.Join(dir, "stats.json"), entries: map[string]statistic{}}
 	if data, err := os.ReadFile(s.path); err == nil {
-		if err = json.Unmarshal(data, &s.entries); err != nil {
+		if err = json.Unmarshal(data, &s.entries); err != nil || s.entries == nil {
+			if err == nil {
+				err = fmt.Errorf("战绩必须是 JSON 对象")
+			}
 			log.Printf("读取战绩失败：%v", err)
+			s.loadErr = err
 			s.entries = map[string]statistic{}
 		}
+	} else if !os.IsNotExist(err) {
+		s.loadErr = err
+		log.Printf("读取战绩失败，保留原文件：%v", err)
 	}
 	return s
 }
@@ -59,6 +67,10 @@ func (s *statStore) record(mode table.Mode, p table.Player, w, l, d, score int) 
 	v.Draws += d
 	v.Score += score
 	s.entries[key] = v
+	if s.loadErr != nil {
+		// Keep session results in memory, without replacing a damaged history.
+		return
+	}
 	data, err := json.MarshalIndent(s.entries, "", "  ")
 	if err == nil {
 		err = os.MkdirAll(filepath.Dir(s.path), 0700)
@@ -96,7 +108,11 @@ func (s *Server) playerStats(w http.ResponseWriter, r *http.Request) {
 	if len(rows) > 50 {
 		rows = rows[:50]
 	}
-	writeJSON(w, 200, map[string]any{"leaderboard": rows, "mine": s.stats.entries[string(mode)+"/"+id]})
+	warning := ""
+	if s.stats.loadErr != nil {
+		warning = "原战绩文件读取失败，已保留；本次运行结果仅在内存中，请恢复文件后重启服务端"
+	}
+	writeJSON(w, 200, map[string]any{"leaderboard": rows, "mine": s.stats.entries[string(mode)+"/"+id], "warning": warning})
 }
 func (s *Server) recordResult(room table.Snapshot, engine games.Engine, rt *roomRuntime) bool {
 	if !gameFinished(engine) {
@@ -139,6 +155,15 @@ func (s *Server) recordResult(room table.Snapshot, engine games.Engine, rt *room
 			rt.previousScores[p.ID] = scores[p.ID]
 			won = score > 0
 			draw = score == 0
+		} else if room.Mode == table.LandlordMode {
+			multiplier, _ := v["multiplier"].(float64)
+			score = max(1, int(multiplier))
+			if i == int(landlord) {
+				score *= 2
+			}
+			if !won {
+				score = -score
+			}
 		} else if room.Mode == table.UNOMode {
 			score = scores[p.ID] - rt.previousScores[p.ID]
 			rt.previousScores[p.ID] = scores[p.ID]

@@ -316,13 +316,18 @@ func (m *Model) statsPanel(personal bool) tea.Cmd {
 		var result struct {
 			Leaderboard []stat
 			Mine        stat
+			Warning     string
 		}
 		if err = json.Unmarshal(data, &result); err != nil {
 			return panelMsg{err: err}
 		}
 		if personal {
 			v := result.Mine
-			return panelMsg{text: fmt.Sprintf("我的战绩 · %s\n%s\n胜 %d  负 %d  和 %d\n累计积分 %d\n主动离开未结束对局记一次负场", mode, p.Name, v.Wins, v.Losses, v.Draws, v.Score)}
+			text := fmt.Sprintf("我的战绩 · %s\n%s\n胜 %d  负 %d  和 %d\n累计积分 %d\n主动离开未结束对局记一次负场", mode, p.Name, v.Wins, v.Losses, v.Draws, v.Score)
+			if result.Warning != "" {
+				text += "\n\n" + result.Warning
+			}
+			return panelMsg{text: text}
 		}
 		var b strings.Builder
 		b.WriteString("排行榜 · " + string(mode) + "\n")
@@ -334,6 +339,9 @@ func (m *Model) statsPanel(personal bool) tea.Cmd {
 		}
 		if len(result.Leaderboard) == 0 {
 			b.WriteString("还没有已完成的真人对局记录")
+		}
+		if result.Warning != "" {
+			b.WriteString("\n\n" + result.Warning)
 		}
 		return panelMsg{text: b.String()}
 	}
@@ -443,14 +451,14 @@ func rulesFor(mode table.Mode) string {
 	common := "\n\n/ 开始聊天；聊天中 Enter 发送、Esc 退出聊天\nEsc 取消选牌/选子；Del 离桌并由机器人接管\nF2 结束后再开一局；M 声音；F1 规则"
 	rules := map[table.Mode]string{
 		table.SnakeMode:        "贪吃蛇 · 本地单机\n方向键 / WASD 控制方向，每个移动节拍只转向一次。\n不能直接反向；最多缓存两次转向，重复按键忽略。\n吃到食物长度+1、得分+10；每吃5个食物升一级。\n触碰边界或自身立即死亡，不穿墙；填满棋盘获胜。\nEnter / 空格开始；P / 空格暂停或继续，Esc暂停。\nF2 / R重开；Del / Q返回本模式菜单；M开关声音。\n查看规则会自动暂停，返回后按P / 空格继续。\n单机模式不需要服务器、房间或其他玩家。",
-		table.TetrisMode:       "俄罗斯方块 · 生存对战\n双人 / 四人独立 10×20 棋盘，开局倒计时3秒。\n←/→ 移动；↑顺时针、↓逆时针旋转；S加速、空格落底。\n满一行自动消除，上方方块下移；一次可清除1–4行。\n每清10行加速，最低每0.5秒下落一格。\n堆积触顶或新方块无法生成即淘汰，最后存活者获胜。\n同一时钟周期全部触顶算平局；淘汰后可继续观战。\n各家方块序列相同；灰色虚影标出落点。\n大厅←/→切换2人/4人，选4进入Sunjiajia人机练习。",
-		table.LandlordMode:     "斗地主\n三人叫分：1/2/3，P 不叫。地主先出，两农民合作。\n同型大牌可压，小王大王组成火箭；炸弹提高倍数。\n←/→ 或 Home/End 移动选牌光标，空格切换选牌。\nEnter 出已选牌，P 过牌；数字1–9快捷选牌。",
+		table.TetrisMode:       "俄罗斯方块 · 生存对战\n双人 / 四人独立 10×20 棋盘，开局倒计时3秒。\n←/→ 移动；↑顺时针、↓逆时针旋转；S加速、空格落底。\n满一行自动消除，上方方块下移；一次可清除1–4行。\n全桌每20秒升一级，落格间隔×0.8，最低100ms。\n首次触地后350ms缓冲逐级缩至150ms，移动不重置。\n堆积触顶或新方块无法生成即淘汰，最后存活者获胜。\n同一时钟周期全部触顶算平局；淘汰后可继续观战。\n各家方块序列相同；灰色虚影标出落点。\n大厅←/→切换2人/4人，选4进入Sunjiajia人机练习。",
+		table.LandlordMode:     "斗地主\n三人叫分：1/2/3，P 不叫。地主先出，两农民合作。\n同型大牌可压，小王大王组成火箭；炸弹提高倍数。\n叫3分立即确定地主；春天/反春天翻倍。\n地主输赢2×倍数，农民各1×倍数；农民共同获胜。\n←/→ 或 Home/End 移动选牌光标，空格切换选牌。\nEnter 出已选牌，P 过牌；数字1–9快捷选牌。",
 		table.LiarBarMode:      "骗子酒馆\n四人桌，每轮声明牌为 Q/K/A；Joker通用。\n数字选择1–3张，Enter盖牌；下一位可按 C 质疑。\n说谎被揭穿由出牌者开枪，否则质疑者开枪。\n亮牌公示5秒、枪决结果5秒后继续；最后存活者胜。",
 		table.MahjongMode:      "四川麻将 · 血战到底\n108张万筒条，禁吃。先换三张同色牌，再同时定缺。\n←/→ + 空格选换牌，Enter提交；1/2/3选缺门。\nD摸牌，←/→选择后Enter出牌；Z胡、P碰、G补杠、B暗杠。\n回应弃牌：Z胡/P碰/G杠/N过。缺门优先打出。\n番数累加×底分，胡牌离场，剩余玩家继续。\n流局依次退杠分、查花猪、查叫；开局可在O设置房规。",
-		table.ChessMode:        "中国象棋\n红先黑后，9×10棋盘。鼠标点击己方棋子，再点目标。\n也可方向键移动、Enter选子/落子，Esc取消。\n遵循蹩马腿、塞象眼、炮架、九宫和将帅照面规则。\n将死或无合法走法判负。",
-		table.WesternChessMode: "国际象棋\n白先黑后，鼠标点棋子/目标；方向键+Enter也可操作。\n支持王车易位、吃过路兵、将死和无子可走和棋。\n升变前 Q后/R车/B象/N马；Esc取消选择。",
+		table.ChessMode:        "中国象棋\n红先黑后，9×10棋盘。鼠标点击己方棋子，再点目标。\n也可方向键移动、Enter选子/落子，Esc取消。\n遵循蹩马腿、塞象眼、炮架、九宫和将帅照面规则。\n将死或无合法走法判负。\n休闲房规：三次重复判和，单方持续长将判负。\n暂不自动裁决长捉等竞赛申诉。",
+		table.WesternChessMode: "国际象棋\n白先黑后，鼠标点棋子/目标；方向键+Enter也可操作。\n支持王车易位、吃过路兵、将死和无子可走和棋。\n子力不足判和；本桌三次重复/50回合自动判和。\n升变前 Q后/R车/B象/N马；Esc取消选择。",
 		table.GomokuMode:       "五子棋\n15×15棋盘，黑先白后。点击交叉点落子。\n横竖斜连续五子或以上获胜；本桌采用无禁手自由规则。",
-		table.GoMode:           "围棋\n19路，黑先白后；点击交叉点落子，P停一手。\n支持提子、自杀禁入、全局同形禁入。\n双方连续停一手后数子，白贴7.5目。\n当前按终盘棋形直接数子，请先把死子处理完再停着。",
+		table.GoMode:           "围棋\n19路，黑先白后；点击交叉点落子，P停一手。\n支持提子、自杀禁入、全局同形禁入。\n双方连续停一手后协商死子，中国数子白贴7.5目。\n点击/Enter切换整组死子；C确认；双方确认才结算。\n修改死子重置确认；R有争议时恢复行棋。\n人机不自动判断死活，遇死子提案会恢复行棋。",
 		table.UNOMode:          "UNO\n匹配颜色/数字/功能，万能牌可换色。←/→选牌，Enter出。\nR/Y/B/G选择万能颜色；D摸牌/承受叠罚，K摸牌后结束。\nU声明UNO；C抓漏喊；X挑战+4；T选择7的交换对象。\n0按方向传手，7交换手牌；非回合完全相同牌可跳打。\n+2/+4可叠加；V切换数字双牌（需开局启用）。\n先打空获胜，累计500分胜出；O设置可选房规。",
 	}
 	if mode == table.SnakeMode {

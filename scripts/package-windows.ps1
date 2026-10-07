@@ -50,13 +50,13 @@ foreach ($stage in @($hostStage, $clientStage)) {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/terminal-controls.md') -Destination (Join-Path $stage '终端全部操作.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/pokemon-text-adventure.md') -Destination (Join-Path $stage '宝可梦指令与规则.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/memory-and-test-report.md') -Destination (Join-Path $stage 'memory-and-test-report.md')
-    foreach ($guide in @('terminal-controls.md', 'pokemon-text-adventure.md', 'game-audio.md')) {
+    foreach ($guide in @('terminal-controls.md', 'pokemon-text-adventure.md', 'game-audio.md', 'full-review-2026-10-07.md')) {
         Copy-Item -LiteralPath (Join-Path $projectRoot "docs/$guide") -Destination (Join-Path $stage $guide)
     }
 }
 $hostDocs = Join-Path $hostStage 'docs'
 New-Item -ItemType Directory -Path $hostDocs -Force | Out-Null
-foreach ($name in @('mode-migration-status.md', 'pokemon-text-adventure.md', 'memory-and-test-report.md', 'terminal-controls.md', 'game-audio.md')) {
+foreach ($name in @('mode-migration-status.md', 'pokemon-text-adventure.md', 'memory-and-test-report.md', 'terminal-controls.md', 'game-audio.md', 'full-review-2026-10-07.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot "docs/$name") -Destination (Join-Path $hostDocs $name)
 }
 

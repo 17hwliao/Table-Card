@@ -13,6 +13,8 @@ func (e *Engine) resign(playerID string) (any, error) {
 		if p.ID == playerID {
 			g.winner = g.players[1-i].ID
 			g.finished = true
+			g.scoring = false
+			g.dead = [BoardSize][BoardSize]bool{}
 			return g.snapshotLocked(), nil
 		}
 	}

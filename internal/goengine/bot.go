@@ -45,7 +45,29 @@ func (e *Engine) BotAction(playerID string) json.RawMessage {
 	g := e.game
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	if g.finished || g.players[int(g.turn)-1].ID != playerID {
+	if g.finished {
+		return nil
+	}
+	if g.scoring {
+		seat := -1
+		for i, p := range g.players {
+			if p.ID == playerID {
+				seat = i
+			}
+		}
+		if seat < 0 || g.accepted[seat] {
+			return nil
+		}
+		for _, row := range g.dead {
+			for _, dead := range row {
+				if dead {
+					return json.RawMessage(`{"type":"resume"}`)
+				}
+			}
+		}
+		return json.RawMessage(`{"type":"accept_score"}`)
+	}
+	if g.players[int(g.turn)-1].ID != playerID {
 		return nil
 	}
 	best, bx, by := -1<<30, -1, -1

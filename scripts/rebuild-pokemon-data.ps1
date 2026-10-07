@@ -20,7 +20,7 @@ $data = @(foreach ($row in $species) {
             $item = ''; if ($entry.trigger_item_id) { $item = $stoneNames[$itemNames[[int]$entry.trigger_item_id]] }
             # Eevee and the stone/trade branches preserve their classic triggers.
             if ([int]$entry.minimum_level -gt 0 -or [int]$entry.evolution_trigger_id -eq 2 -or $item) {
-                [ordered]@{ species=$target; level=[int]$entry.minimum_level; trade=([int]$entry.evolution_trigger_id -eq 2); item=$item }
+                [pscustomobject][ordered]@{ species=$target; level=[int]$entry.minimum_level; trade=([int]$entry.evolution_trigger_id -eq 2); item=$item }
             }
         }
     })

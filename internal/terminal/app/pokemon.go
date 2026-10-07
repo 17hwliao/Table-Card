@@ -104,6 +104,9 @@ func (m *Model) pokemonTick(msg pokemonTickMsg) tea.Cmd {
 }
 func (m *Model) pokemonKey(message tea.KeyMsg) tea.Cmd {
 	key := message.String()
+	if pressed, ok := message.(tea.KeyPressMsg); ok && pressed.IsRepeat && (key == "enter" || key == "delete" || key == "f9" || key == "f5" || key == "ctrl+s") {
+		return nil
+	}
 	if m.overlay != "" && key != "delete" {
 		m.overlayKey(key)
 		return nil

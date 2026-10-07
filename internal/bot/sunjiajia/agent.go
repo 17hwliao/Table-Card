@@ -96,7 +96,8 @@ func (Agent) Bid(hand []cards.Card) int {
 			strength += 0.2
 		}
 	}
-	for _, count := range counts {
+	for rank := cards.Three; rank <= cards.BigJoker; rank++ {
+		count := counts[rank]
 		switch count {
 		case 2:
 			strength += 0.16
@@ -124,7 +125,7 @@ func (Agent) Bid(hand []cards.Card) int {
 func (a Agent) Choose(hand []cards.Card, table Table) []cards.Card {
 	trick := table.LastTrick
 	if trick != nil && onSameTeam(table.Seat, trick.Seat, table.Landlord) && table.Seat != trick.Seat {
-		if table.CardsLeft[trick.Seat] > 2 {
+		if table.CardsLeft[trick.Seat] > 2 && table.Landlord >= 0 && table.Landlord < len(table.CardsLeft) && table.CardsLeft[table.Landlord] > 2 {
 			return nil
 		}
 	}
@@ -157,7 +158,22 @@ func (a Agent) Choose(hand []cards.Card, table Table) []cards.Card {
 	if len(legal) == 0 {
 		return nil
 	}
-	sort.SliceStable(legal, func(i, j int) bool { return legal[i].Score < legal[j].Score })
+	sort.Slice(legal, func(i, j int) bool {
+		if legal[i].Score != legal[j].Score {
+			return legal[i].Score < legal[j].Score
+		}
+		// Map iteration order must not change a tied decision.
+		a, b := legal[i].Cards, legal[j].Cards
+		for k := 0; k < min(len(a), len(b)); k++ {
+			if a[k].Rank != b[k].Rank {
+				return a[k].Rank < b[k].Rank
+			}
+			if a[k].Suit != b[k].Suit {
+				return a[k].Suit < b[k].Suit
+			}
+		}
+		return len(a) < len(b)
+	})
 	chosen := legal[0]
 	if trick != nil && chosen.Pattern.Kind == landlord.Bomb {
 		for _, candidate := range legal {
@@ -195,7 +211,7 @@ func candidates(hand []cards.Card) []Candidate {
 	if available[cards.SmallJoker] > 0 && available[cards.BigJoker] > 0 {
 		add(map[cards.Rank]int{cards.SmallJoker: 1, cards.BigJoker: 1})
 	}
-	for rank := cards.Three; rank <= cards.Ace; rank++ {
+	for rank := cards.Three; rank <= cards.Two; rank++ {
 		if available[rank] < 3 {
 			continue
 		}
@@ -208,7 +224,7 @@ func candidates(hand []cards.Card) []Candidate {
 			}
 		}
 	}
-	for rank := cards.Three; rank <= cards.Ace; rank++ {
+	for rank := cards.Three; rank <= cards.Two; rank++ {
 		if available[rank] < 4 {
 			continue
 		}
@@ -369,7 +385,7 @@ func allRanks() []cards.Rank {
 
 func lowRanks() []cards.Rank {
 	ranks := make([]cards.Rank, 0, 13)
-	for rank := cards.Three; rank <= cards.Ace; rank++ {
+	for rank := cards.Three; rank <= cards.Two; rank++ {
 		ranks = append(ranks, rank)
 	}
 	return ranks
@@ -439,7 +455,8 @@ func handCost(hand []cards.Card) float64 {
 		counts[card.Rank]++
 	}
 	cost := 0.0
-	for rank, count := range counts {
+	for rank := cards.Three; rank <= cards.BigJoker; rank++ {
+		count := counts[rank]
 		switch count {
 		case 1:
 			cost += 1.9 - float64(rank-cards.Three)*0.075

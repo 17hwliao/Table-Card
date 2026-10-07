@@ -78,7 +78,8 @@ func TestActionsAndSimultaneousTopOut(t *testing.T) {
 		p.Active = Piece{Kind: 2, X: 3, Y: 18}
 		p.lastFall = now.Add(-time.Second)
 	}
-	if !e.Tick(now, nil) || !e.finished || !e.draw || e.winner != "" {
+	e.Tick(now, nil) // First contact starts the fixed landing delay.
+	if !e.Tick(now.Add(e.lockDelay()), nil) || !e.finished || !e.draw || e.winner != "" {
 		t.Fatal("simultaneous elimination not a draw")
 	}
 }

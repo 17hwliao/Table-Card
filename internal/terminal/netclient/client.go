@@ -82,6 +82,13 @@ func (c *Client) Modes(ctx context.Context) ([]struct {
 	MaxSeats int        `json:"maxSeats"`
 	Progress string     `json:"progress"`
 }, error) {
+	var health struct{ Service, Protocol, RulesVersion string }
+	if err := c.request(ctx, http.MethodGet, "/api/health", nil, &health); err != nil {
+		return nil, err
+	}
+	if health.Service != "table-card" || health.Protocol != "2" || health.RulesVersion != table.RulesVersion {
+		return nil, fmt.Errorf("服务端版本与当前客户端不匹配，请房主更新本次维护版并重启服务端")
+	}
 	var modes []struct {
 		ID       table.Mode `json:"id"`
 		Name     string     `json:"name"`

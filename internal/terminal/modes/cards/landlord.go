@@ -62,11 +62,22 @@ func (c *Landlord) View(s ui.Snapshot) string {
 	if v.Phase == 0 {
 		fmt.Fprintf(&b, "叫地主阶段   当前最高叫分：%d\n", v.HighestBid)
 	} else if v.Phase == 3 {
-		winner := "未知"
-		if v.Winner >= 0 && v.Winner < len(s.Room.Players) {
-			winner = s.Room.Players[v.Winner].Name
+		team := "农民队"
+		landlordWon := v.Winner == v.Landlord
+		if landlordWon {
+			team = "地主"
 		}
-		fmt.Fprintf(&b, "%s本局结束，%s 获胜%s\n", gold, winner, reset)
+		fmt.Fprintf(&b, "%s本局结束，%s 获胜 · 最终倍数 ×%d%s\n", gold, team, max(1, v.Multiplier), reset)
+		for seat, player := range s.Room.Players {
+			points := max(1, v.Multiplier)
+			if seat == v.Landlord {
+				points *= 2
+			}
+			if landlordWon != (seat == v.Landlord) {
+				points = -points
+			}
+			fmt.Fprintf(&b, "  %s  %+d 分\n", player.Name, points)
+		}
 	} else {
 		fmt.Fprintf(&b, "当前行动：%s\n", playerName(s, v.TurnPlayer))
 		if v.Trick == nil || len(v.Trick.Cards) == 0 {
@@ -96,7 +107,7 @@ func (c *Landlord) View(s ui.Snapshot) string {
 		}
 	}
 	fmt.Fprintln(&b, handFaces(labels, colors, c.selected, c.cursor, s.Width))
-	if s.PlayerID != v.TurnPlayer {
+	if v.Phase != 3 && s.PlayerID != v.TurnPlayer {
 		fmt.Fprintf(&b, "\n%s等待 %s 操作%s\n", muted, playerName(s, v.TurnPlayer), reset)
 	}
 	fmt.Fprintln(&b, "操作：叫分 1/2/3 · 不叫 P · ←/→ 移动 · Space 选牌 · 1-9 快选 · Enter 出牌 · P 过牌 · Esc 清空选择")

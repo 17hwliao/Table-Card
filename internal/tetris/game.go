@@ -34,12 +34,16 @@ type Player struct {
 	Place  int    `json:"place"`
 }
 type Snapshot struct {
-	Players  []Player `json:"players"`
-	Started  bool     `json:"started"`
-	Winner   string   `json:"winner"`
-	Draw     bool     `json:"draw"`
-	Finished bool     `json:"finished"`
-	StartAt  int64    `json:"startAt"`
+	Level          int      `json:"level"`
+	DropMS         int      `json:"dropMs"`
+	ElapsedSeconds int      `json:"elapsedSeconds"`
+	NextLevelIn    int      `json:"nextLevelIn"`
+	Players        []Player `json:"players"`
+	Started        bool     `json:"started"`
+	Winner         string   `json:"winner"`
+	Draw           bool     `json:"draw"`
+	Finished       bool     `json:"finished"`
+	StartAt        int64    `json:"startAt"`
 }
 type playerState struct {
 	Player
@@ -48,6 +52,7 @@ type playerState struct {
 	bagIndex int
 	lastFall time.Time
 	lastBot  time.Time
+	grounded time.Time
 }
 type Engine struct {
 	mu                      sync.RWMutex
@@ -55,6 +60,31 @@ type Engine struct {
 	startAt                 time.Time
 	winner                  string
 	started, draw, finished bool
+	level, elapsedSeconds   int
+}
+
+const levelPeriod = 20 * time.Second
+
+// Keep gravity independent from player traffic and progress even without clears.
+// Each level retains 80 percent of the previous interval, down to 100ms per row.
+func fallInterval(level int) time.Duration {
+	interval := time.Second
+	for i := 1; i < level && interval > 100*time.Millisecond; i++ {
+		interval = interval * 4 / 5
+	}
+	return max(100*time.Millisecond, interval)
+}
+
+func (e *Engine) advanceClock(now time.Time) bool {
+	seconds := max(e.elapsedSeconds, int(max(time.Duration(0), now.Sub(e.startAt))/time.Second))
+	level := min(12, 1+seconds/int(levelPeriod/time.Second))
+	changed := seconds != e.elapsedSeconds || level != e.level
+	e.elapsedSeconds, e.level = seconds, level
+	return changed
+}
+
+func (e *Engine) lockDelay() time.Duration {
+	return max(150*time.Millisecond, 350*time.Millisecond-time.Duration(e.level-1)*20*time.Millisecond)
 }
 
 // The seven pieces are I, O, T, S, Z, J and L. Coordinates rotate inside
@@ -122,7 +152,7 @@ func NewEngine(players []table.Player) (*Engine, error) {
 	if len(players) != 2 && len(players) != 4 {
 		return nil, errors.New("俄罗斯方块只支持双人或四人对战")
 	}
-	e := &Engine{startAt: time.Now().Add(3 * time.Second)}
+	e := &Engine{startAt: time.Now().Add(3 * time.Second), level: 1}
 	seed := time.Now().UnixNano()
 	seen := map[string]bool{}
 	for _, p := range players {
@@ -154,6 +184,10 @@ func (e *Engine) Finished() bool    { e.mu.RLock(); defer e.mu.RUnlock(); return
 func (e *Engine) View(_ string) any { e.mu.RLock(); defer e.mu.RUnlock(); return e.snapshot() }
 func (e *Engine) snapshot() Snapshot {
 	v := Snapshot{Started: e.started, Winner: e.winner, Draw: e.draw, Finished: e.finished, StartAt: e.startAt.UnixMilli(), Players: make([]Player, len(e.players))}
+	v.Level, v.DropMS, v.ElapsedSeconds = e.level, int(fallInterval(e.level)/time.Millisecond), e.elapsedSeconds
+	if e.level < 12 {
+		v.NextLevelIn = int(levelPeriod/time.Second) - e.elapsedSeconds%int(levelPeriod/time.Second)
+	}
 	for i := range e.players {
 		v.Players[i] = e.players[i].Player
 	}
@@ -190,6 +224,7 @@ func (e *Engine) Apply(id string, raw json.RawMessage) (any, error) {
 		return nil, errors.New("比赛准备中，请等待倒计时")
 	}
 	e.started = true
+	e.advanceClock(now)
 	piece := player.Active
 	switch action.Type {
 	case "left", "right":
@@ -213,9 +248,10 @@ func (e *Engine) Apply(id string, raw json.RawMessage) (any, error) {
 			player.Active = piece
 			player.Score++
 		} else {
-			e.lock(player, now)
+			if player.grounded.IsZero() {
+				player.grounded = now
+			}
 		}
-		player.lastFall = now
 	case "hard_drop":
 		piece = Ghost(player.Board, piece)
 		player.Score += 2 * (piece.Y - player.Active.Y)
@@ -277,7 +313,7 @@ func (e *Engine) lock(p *playerState, now time.Time) {
 		p.Board[c.Y][c.X] = uint8(p.Active.Kind)
 	}
 	lines := clearRows(&p.Board)
-	p.Score += [...]int{0, 100, 300, 500, 800}[lines] * (1 + p.Lines/10)
+	p.Score += [...]int{0, 100, 300, 500, 800}[lines] * max(1, e.level)
 	p.Lines += lines
 	// A settled stack touching the top edge loses, after any completed rows clear.
 	for _, value := range p.Board[0] {
@@ -289,6 +325,7 @@ func (e *Engine) lock(p *playerState, now time.Time) {
 	p.Active = Piece{Kind: p.Next, X: 3, Y: -1}
 	p.Next = p.nextKind()
 	p.lastFall = now
+	p.grounded = time.Time{}
 	if !Fits(p.Board, p.Active) {
 		p.Alive = false
 	}
@@ -328,7 +365,7 @@ func (e *Engine) Tick(now time.Time, automated []string) bool {
 	if e.finished || now.Before(e.startAt) {
 		return false
 	}
-	changed := false
+	changed := e.advanceClock(now)
 	if !e.started {
 		e.started = true
 		changed = true
@@ -345,26 +382,43 @@ func (e *Engine) Tick(now time.Time, automated []string) bool {
 				break
 			}
 		}
-		if bot && now.Sub(p.lastBot) >= 1500*time.Millisecond {
+		botInterval := max(350*time.Millisecond, fallInterval(e.level)*3/2)
+		if bot && now.Sub(p.lastBot) >= botInterval {
 			e.botDrop(p, now)
 			p.lastBot = now
 			changed = true
 			continue
 		}
-		interval := time.Second - time.Duration(p.Lines/10)*100*time.Millisecond
-		if interval < 500*time.Millisecond {
-			interval = 500 * time.Millisecond
+		interval := fallInterval(e.level)
+		// Bound catch-up after a stalled server without rounding every interval
+		// to its tick rate. New-piece spawning ends catch-up for that board.
+		if now.Sub(p.lastFall) > 4*interval {
+			p.lastFall = now.Add(-4 * interval)
 		}
-		if now.Sub(p.lastFall) >= interval {
+		for p.Alive && now.Sub(p.lastFall) >= interval {
 			piece := p.Active
 			piece.Y++
+			p.lastFall = p.lastFall.Add(interval)
 			if Fits(p.Board, piece) {
 				p.Active = piece
-				p.lastFall = now
 			} else {
-				e.lock(p, now)
+				if p.grounded.IsZero() {
+					p.grounded = now
+				}
+				break
 			}
 			changed = true
+		}
+		below := p.Active
+		below.Y++
+		if !Fits(p.Board, below) {
+			if p.grounded.IsZero() {
+				p.grounded = now
+			}
+			if now.Sub(p.grounded) >= e.lockDelay() {
+				e.lock(p, now)
+				changed = true
+			}
 		}
 	}
 	e.resolve()

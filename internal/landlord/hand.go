@@ -71,15 +71,28 @@ func Classify(play []cards.Card) (Hand, error) {
 		return withMain(result, ConsecutivePairs, ranks[len(ranks)-1], len(ranks)), nil
 	}
 
-	if core, ok := findTripleRun(counts, 2); ok {
-		left := n - 3*core.length
-		switch {
-		case left == 0:
-			return withMain(result, Airplane, core.high, core.length), nil
-		case left == core.length:
-			return withMain(result, AirplaneSingles, core.high, core.length), nil
-		case left == 2*core.length && remainingArePairs(counts, core):
-			return withMain(result, AirplanePairs, core.high, core.length), nil
+	// Search every valid core length. A longer run of triples can also supply
+	// single wings; selecting only the maximal run rejects valid airplanes.
+	for _, shape := range []struct {
+		copies int
+		kind   Kind
+	}{{3, Airplane}, {4, AirplaneSingles}, {5, AirplanePairs}} {
+		if n%shape.copies != 0 || n/shape.copies < 2 {
+			continue
+		}
+		length := n / shape.copies
+		for low := cards.Three; int(low)+length-1 <= int(cards.Ace); low++ {
+			core := tripleCore{low: low, high: low + cards.Rank(length-1), length: length}
+			valid := true
+			for rank := core.low; rank <= core.high; rank++ {
+				if counts[rank] < 3 {
+					valid = false
+					break
+				}
+			}
+			if valid && (shape.kind != AirplanePairs || remainingArePairs(counts, core)) {
+				return withMain(result, shape.kind, core.high, length), nil
+			}
 		}
 	}
 
@@ -162,27 +175,6 @@ func isRun(counts map[cards.Rank]int, ranks []cards.Rank, copies, minimum int) b
 type tripleCore struct {
 	low, high cards.Rank
 	length    int
-}
-
-func findTripleRun(counts map[cards.Rank]int, minimum int) (tripleCore, bool) {
-	var tripled []cards.Rank
-	for rank, count := range counts {
-		if count >= 3 && rank <= cards.Ace {
-			tripled = append(tripled, rank)
-		}
-	}
-	sort.Slice(tripled, func(i, j int) bool { return tripled[i] < tripled[j] })
-	for start := 0; start < len(tripled); {
-		end := start + 1
-		for end < len(tripled) && tripled[end] == tripled[end-1]+1 {
-			end++
-		}
-		if end-start >= minimum {
-			return tripleCore{low: tripled[start], high: tripled[end-1], length: end - start}, true
-		}
-		start = end
-	}
-	return tripleCore{}, false
 }
 
 func remainingArePairs(counts map[cards.Rank]int, core tripleCore) bool {

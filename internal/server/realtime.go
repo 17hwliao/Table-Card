@@ -3,11 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/17hwliao/table-card-independent/internal/games"
 	"github.com/17hwliao/table-card-independent/internal/table"
@@ -24,7 +24,9 @@ type socketPeer struct {
 	playerID string
 	name     string
 	conn     *websocket.Conn
-	writeMu  sync.Mutex
+	out      chan []byte
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 type socketRequest struct {
@@ -69,7 +71,7 @@ func (h *roomHub) disconnectPlayer(roomCode, playerID string) {
 	}
 	h.mu.Unlock()
 	for _, peer := range peers {
-		_ = peer.conn.CloseNow()
+		peer.cancel()
 	}
 }
 
@@ -86,7 +88,7 @@ func (h *roomHub) roomPeers(roomCode string) []*socketPeer {
 func (h *roomHub) broadcast(roomCode string, value any) {
 	for _, peer := range h.roomPeers(roomCode) {
 		if err := peer.send(value); err != nil {
-			_ = peer.conn.CloseNow()
+			peer.cancel()
 			h.remove(peer)
 		}
 	}
@@ -97,11 +99,37 @@ func (p *socketPeer) send(value any) error {
 	if err != nil {
 		return err
 	}
-	p.writeMu.Lock()
-	defer p.writeMu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return p.conn.Write(ctx, websocket.MessageText, payload)
+	select {
+	case <-p.ctx.Done():
+		return p.ctx.Err()
+	default:
+	}
+	select {
+	case p.out <- payload:
+		return nil
+	default:
+		// A slow peer must never stall every room's simulation under opMu.
+		p.cancel()
+		return errors.New("客户端接收过慢，连接已断开，请重连")
+	}
+}
+
+func (p *socketPeer) writeLoop() {
+	defer p.cancel()
+	defer p.conn.CloseNow()
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case payload := <-p.out:
+			ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
+			err := p.conn.Write(ctx, websocket.MessageText, payload)
+			cancel()
+			if err != nil {
+				return
+			}
+		}
+	}
 }
 
 func (s *Server) roomWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -132,18 +160,21 @@ func (s *Server) roomWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn.SetReadLimit(16 << 10)
-	peer := &socketPeer{roomCode: roomCode, playerID: playerID, name: name, conn: conn}
+	ctx, cancel := context.WithCancel(r.Context())
+	peer := &socketPeer{roomCode: roomCode, playerID: playerID, name: name, conn: conn, out: make(chan []byte, 8), ctx: ctx, cancel: cancel}
+	go peer.writeLoop()
 	s.hub.add(peer)
 	defer func() {
+		cancel()
 		s.hub.remove(peer)
-		_ = conn.Close(websocket.StatusNormalClosure, "")
+		_ = conn.CloseNow()
 	}()
 	s.opMu.Lock()
 	s.sendRoomState(peer, room)
 	s.opMu.Unlock()
 
 	for {
-		messageType, payload, err := conn.Read(context.Background())
+		messageType, payload, err := conn.Read(ctx)
 		if err != nil {
 			return
 		}
@@ -168,8 +199,8 @@ func (s *Server) handleSocketMessage(peer *socketPeer, room *table.Room, request
 			return
 		}
 		text := strings.TrimSpace(request.Text)
-		if text == "" || utf8.RuneCountInString(text) > 300 {
-			_ = peer.send(map[string]string{"type": "error", "error": "聊天内容需要为 1 到 300 个字符"})
+		if !table.ValidVisibleText(text, 300) {
+			_ = peer.send(map[string]string{"type": "error", "error": "聊天需为1到300个可见字符，不能包含终端控制符"})
 			return
 		}
 		s.hub.broadcast(peer.roomCode, map[string]any{

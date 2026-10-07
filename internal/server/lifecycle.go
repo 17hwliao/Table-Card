@@ -27,7 +27,7 @@ func newRoomRuntime() *roomRuntime {
 }
 func (s *Server) Close() { s.stopOnce.Do(func() { close(s.stop) }) }
 func (s *Server) tickLoop() {
-	timer := time.NewTicker(500 * time.Millisecond)
+	timer := time.NewTicker(100 * time.Millisecond)
 	defer timer.Stop()
 	for {
 		select {

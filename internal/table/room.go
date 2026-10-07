@@ -5,10 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 )
 
 type Mode string
+
+// Additive rule/UI changes still need a matching backend to take effect.
+const RulesVersion = "2026.10.07-review"
 
 const (
 	LandlordMode     Mode = "landlord"
@@ -85,7 +91,8 @@ func (m *RoomManager) Create(mode Mode, seats int, owner Player) (*Room, error) 
 	if seats < 2 || seats > 4 {
 		return nil, fmt.Errorf("座位数必须在 2 到 4 之间")
 	}
-	if owner.ID == "" || owner.Name == "" {
+	owner.Name = strings.TrimSpace(owner.Name)
+	if owner.ID == "" || !ValidVisibleText(owner.Name, 32) {
 		return nil, fmt.Errorf("创建房间需要有效玩家身份")
 	}
 	for {
@@ -123,7 +130,8 @@ func (r *Room) Join(player Player) error {
 	if r.phase != Waiting {
 		return ErrRoomStarted
 	}
-	if player.ID == "" || player.Name == "" {
+	player.Name = strings.TrimSpace(player.Name)
+	if player.ID == "" || !ValidVisibleText(player.Name, 32) {
 		return fmt.Errorf("加入房间需要有效玩家身份")
 	}
 	for _, current := range r.players {
@@ -137,6 +145,20 @@ func (r *Room) Join(player Player) error {
 	player.Ready = false
 	r.players = append(r.players, player)
 	return nil
+}
+
+// Names and chat are rendered in a terminal: forbid escape/control sequences
+// and invisible formatting controls that can overwrite or spoof the UI.
+func ValidVisibleText(text string, limit int) bool {
+	if !utf8.ValidString(text) || strings.TrimSpace(text) == "" || utf8.RuneCountInString(text) > limit {
+		return false
+	}
+	for _, r := range text {
+		if unicode.IsControl(r) || unicode.In(r, unicode.Cf) {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Room) Leave(playerID string) error {
