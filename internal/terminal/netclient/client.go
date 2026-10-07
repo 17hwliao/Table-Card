@@ -141,7 +141,7 @@ func (c *Client) Connect(ctx context.Context, code, playerID string) error {
 	base.RawQuery = query.Encode()
 	header := http.Header{}
 	header.Set("X-Player-Token", c.token)
-	conn, _, err := websocket.Dial(ctx, base.String(), &websocket.DialOptions{HTTPHeader: header})
+	conn, _, err := websocket.Dial(ctx, base.String(), &websocket.DialOptions{HTTPHeader: header, HTTPClient: c.http})
 	if err != nil {
 		return err
 	}

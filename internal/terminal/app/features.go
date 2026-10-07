@@ -114,6 +114,9 @@ func (m *Model) syncMusicMode() {
 	}
 }
 func (m *Model) Close() {
+	if m.connectionCancel != nil {
+		m.connectionCancel()
+	}
 	if m.pokemonGame != nil && !m.pokemonLoadError {
 		if err := m.pokemonGame.Save(); err != nil {
 			log.Printf("宝可梦存档保存失败：%v", err)
@@ -281,18 +284,14 @@ func (m *Model) match() tea.Cmd {
 		return nil
 	}
 	m.player = p
-	m.pending = true
+	ctx, cancel := m.beginRoomConnection(client)
 	mode := m.currentMode()
-	m.status = "正在匹配，同模式玩家优先，15秒后补机器人"
+	m.status = "正在匹配，同模式玩家优先，15秒后补机器人 · Esc / Del 取消"
 	seats := m.seats
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 		room, err := client.Match(ctx, mode, p, seats)
-		if err == nil {
-			err = client.Connect(context.Background(), room.Code, p.ID)
-		}
-		return connected{client, room, err}
+		return finishRoomConnection(ctx, client, room, p.ID, err)
 	}
 }
 func (m *Model) statsPanel(personal bool) tea.Cmd {

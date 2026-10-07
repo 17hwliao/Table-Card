@@ -51,9 +51,19 @@ func (m Monster) EvolutionSummary() string {
 		case e.Trade:
 			rows = append(rows, fmt.Sprintf("进化 → %s：本地通信进化\n  不靠经验进化，伙伴菜单选择通信", name))
 		case e.Level > 0:
-			remaining := max(0, ExperienceAtLevel(e.Level)-m.Exp)
-			levels := max(0, e.Level-m.Level)
-			rows = append(rows, fmt.Sprintf("进化 → %s：达到 Lv%d\n  还差 %d 级 / %d 经验", name, e.Level, levels, remaining))
+			if m.Level >= 100 {
+				rows = append(rows, fmt.Sprintf("进化 → %s：已满级，无法再通过升级触发进化", name))
+				continue
+			}
+			// Level evolutions are checked when gaining a level, including wild
+			// monsters caught at or above their species' evolution threshold.
+			target := max(e.Level, m.Level+1)
+			remaining := max(0, ExperienceAtLevel(target)-m.Exp)
+			condition := fmt.Sprintf("达到 Lv%d", e.Level)
+			if m.Level >= e.Level {
+				condition = fmt.Sprintf("等级已达标，下次升级至 Lv%d 时进化", target)
+			}
+			rows = append(rows, fmt.Sprintf("进化 → %s：%s\n  还差 %d 级 / %d 经验", name, condition, target-m.Level, remaining))
 		}
 	}
 	return strings.Join(rows, "\n")

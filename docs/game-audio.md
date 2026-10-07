@@ -28,4 +28,6 @@
 
 ## 开发者重新导入
 
-运行 `python -m pip install --target runtime/audio-tools imageio-ffmpeg` 后运行 `python scripts/fetch-mode-music.py`，或指定 `--ffmpeg` 路径。工具缓存原始 OGG 到忽略的 `runtime/music-source`，将处理后的 MP3 和校验清单写入音频目录。导入工具只用于制作资产，玩家运行不依赖 Python 或 FFmpeg。
+运行 `python -m pip install --target runtime/audio-tools imageio-ffmpeg` 后运行 `python scripts/fetch-mode-music.py`，或指定 `--ffmpeg` 路径。工具缓存原始 OGG 到忽略的 `runtime/music-source`，缓存文件名绑定下载地址摘要，复用前核对地址、OGG 标记和 SHA-256；旧版仅按模式命名的缓存不再复用。修改下载地址会自动重新下载，同一地址的源文件更新时可加 `--refresh` 强制下载。
+
+所有曲目先在临时目录完成转换，全部成功后才替换音频和校验清单；普通文件写入错误会回滚已替换文件。突然断电或进程被强制终止不保证整批原子性，重新执行导入即可重新生成完整一组。导入工具只用于制作资产，玩家运行不依赖 Python 或 FFmpeg。

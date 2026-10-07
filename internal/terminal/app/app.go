@@ -89,6 +89,9 @@ type Model struct {
 	optionIndex                int
 	settings                   map[table.Mode]map[string]any
 	pending                    bool
+	connectionClient           *netclient.Client
+	connectionCancel           context.CancelFunc
+	connectionCanceled         bool
 	reconnecting               bool
 	pauseUntil                 int64
 	clockActive                bool
@@ -222,9 +225,29 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case connected:
+		if msg.client != m.connectionClient {
+			return m, nil
+		}
+		if m.connectionCanceled && msg.err == nil {
+			id := m.player.ID
+			return m, func() tea.Msg {
+				cleanupRoomConnection(msg.client, msg.room, id)
+				return connected{client: msg.client, room: msg.room, err: context.Canceled}
+			}
+		}
+		canceled := m.connectionCanceled
+		if m.connectionCancel != nil {
+			m.connectionCancel()
+		}
+		m.connectionClient, m.connectionCancel = nil, nil
+		m.connectionCanceled = false
 		m.pending = false
 		if msg.err != nil {
-			m.status = "房间连接失败：" + msg.err.Error()
+			if canceled {
+				m.status = "连接已取消，可重新选择"
+			} else {
+				m.status = "房间连接失败：" + msg.err.Error() + " · 可重试"
+			}
 			return m, nil
 		}
 		m.api, m.room = msg.client, msg.room
@@ -334,6 +357,12 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 			return tea.Quit
 		}
 		return tea.Sequence(m.leave(), tea.Quit)
+	}
+	if m.connectionCancel != nil && (key == "esc" || key == "delete") {
+		m.connectionCanceled = true
+		m.connectionCancel()
+		m.status = "正在取消连接并退出临时房间…"
+		return nil
 	}
 	if m.page == pokemonScreen {
 		return m.pokemonKey(message)
@@ -590,23 +619,24 @@ func (m *Model) create() tea.Cmd {
 	client := netclient.New(m.address)
 	client.Identity(identity.ID, identity.Token)
 	m.player = player
-	m.pending = true
+	ctx, cancel := m.beginRoomConnection(client)
 	options, _ := json.Marshal(m.settings[info.ID])
-	m.status = "正在创建房间…"
+	m.status = "正在创建房间… · Esc / Del 取消"
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		room, err := client.CreateRoom(ctx, info.ID, seats, bots, player, options)
 		if err == nil && bots > 0 {
-			room, err = client.SetReady(ctx, room.Code, player.ID, true)
+			var updated table.Snapshot
+			updated, err = client.SetReady(ctx, room.Code, player.ID, true)
 			if err == nil {
-				room, err = client.StartRoom(ctx, room.Code)
+				room = updated
+				updated, err = client.StartRoom(ctx, room.Code)
+				if err == nil {
+					room = updated
+				}
 			}
 		}
-		if err == nil {
-			err = client.Connect(context.Background(), room.Code, player.ID)
-		}
-		return connected{client: client, room: room, err: err}
+		return finishRoomConnection(ctx, client, room, player.ID, err)
 	}
 }
 
@@ -624,16 +654,12 @@ func (m *Model) join() tea.Cmd {
 	client := netclient.New(m.address)
 	client.Identity(identity.ID, identity.Token)
 	m.player = player
-	m.pending = true
-	m.status = "正在加入房间…"
+	ctx, cancel := m.beginRoomConnection(client)
+	m.status = "正在加入房间… · Esc / Del 取消"
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		room, err := client.JoinRoom(ctx, code, player)
-		if err == nil {
-			err = client.Connect(context.Background(), room.Code, player.ID)
-		}
-		return connected{client: client, room: room, err: err}
+		return finishRoomConnection(ctx, client, room, player.ID, err)
 	}
 }
 
