@@ -18,7 +18,11 @@ type Species struct {
 	Types                                                   []int
 	HP, Attack, Defense, Special, Speed, CatchRate, BaseExp int
 	Evolves                                                 []Evolution
+	Growth                                                  string
+	Learnset                                                []LearnMove
 }
+
+type LearnMove struct{ Level, Move int }
 
 //go:embed species.json
 var speciesJSON []byte
@@ -41,8 +45,19 @@ func init() {
 		panic("incomplete species data")
 	}
 	for id := 1; id <= 151; id++ {
-		Moves = append(Moves, Move{Name: signatureName(id), Type: Dex[id].Types[0], Power: 95, Accuracy: 100, PP: 8})
+		Moves[25+id] = Move{Name: signatureName(id), Type: Dex[id].Types[0], Power: 95, Accuracy: 100, PP: 8, Effect: "ORIGINAL_STORY_SKILL"}
 	}
+	var moves []Move
+	if err := json.Unmarshal(genOneMovesJSON, &moves); err != nil {
+		panic(err)
+	}
+	for _, move := range moves {
+		if move.ID < 0 || move.ID >= len(Moves) {
+			panic("invalid move ID")
+		}
+		Moves[move.ID] = move
+	}
+	loadEncounters()
 }
 
 var TypeNames = map[int]string{1: "一般", 2: "格斗", 3: "飞行", 4: "毒", 5: "地面", 6: "岩石", 7: "虫", 8: "幽灵", 10: "火", 11: "水", 12: "草", 13: "电", 14: "超能力", 15: "冰", 16: "龙"}
@@ -52,42 +67,37 @@ type Move struct {
 	Type, Power, Accuracy, PP int
 	Status                    string
 	Chance                    int
+	ID                        int
+	Key, Effect               string
 }
 
-var Moves = []Move{
-	{"撞击", 1, 35, 95, 35, "", 0}, {"电击", 13, 40, 100, 30, "麻痹", 10}, {"火花", 10, 40, 100, 25, "灼伤", 10}, {"水枪", 11, 40, 100, 25, "", 0},
-	{"藤鞭", 12, 35, 100, 10, "", 0}, {"念力", 14, 50, 100, 25, "", 0}, {"舌舔", 8, 20, 100, 30, "麻痹", 30}, {"毒针", 4, 15, 100, 35, "中毒", 30},
-	{"岩石投掷", 6, 50, 90, 15, "", 0}, {"地震", 5, 100, 100, 10, "", 0}, {"翅膀攻击", 3, 35, 100, 35, "", 0}, {"吸血", 7, 20, 100, 15, "", 0},
-	{"空手劈", 2, 50, 100, 25, "", 0}, {"冰冻光束", 15, 95, 100, 10, "冰冻", 10}, {"龙之怒", 16, 40, 100, 10, "", 0}, {"电磁波", 13, 0, 100, 20, "麻痹", 100},
-	{"催眠粉", 12, 0, 75, 15, "睡眠", 100}, {"催眠术", 14, 0, 60, 20, "睡眠", 100}, {"毒粉", 4, 0, 75, 35, "中毒", 100},
-	{"劈开", 1, 70, 100, 20, "", 0}, {"十万伏特", 13, 95, 100, 15, "麻痹", 10}, {"喷射火焰", 10, 95, 100, 15, "灼伤", 10}, {"冲浪", 11, 95, 100, 15, "", 0},
-	{"飞叶快刀", 12, 55, 95, 25, "", 0}, {"精神强念", 14, 90, 100, 10, "", 0}, {"黑夜魔影", 8, 0, 100, 15, "", 0},
-}
+//go:embed moves_gen1.json
+var genOneMovesJSON []byte
+
+// Indices 0..176 preserve old saves. Original story skills remain explicitly separate.
+var Moves = make([]Move, 316)
 
 func moveSet(id, level int) [4]int {
-	t := Dex[id].Types[0]
-	basic := basicMoves[t]
-	strong := basic
-	if level >= 20 {
-		if n := strongMoves[t]; n > 0 {
-			strong = n
+	result := [4]int{-1, -1, -1, -1}
+	known := []int{}
+	for _, entry := range Dex[id].Learnset {
+		if entry.Level > level {
+			continue
+		}
+		duplicate := false
+		for _, n := range known {
+			duplicate = duplicate || n == entry.Move
+		}
+		if !duplicate {
+			known = append(known, entry.Move)
 		}
 	}
-	status := 18
-	if t == 12 {
-		status = 16
+	if len(known) > 4 {
+		known = known[len(known)-4:]
 	}
-	if t == 13 {
-		status = 15
-	}
-	if t == 14 || t == 8 {
-		status = 17
-	}
-	return [4]int{0, basic, status, strong}
+	copy(result[:], known)
+	return result
 }
-
-var basicMoves = [17]int{1: 0, 2: 12, 3: 10, 4: 7, 5: 8, 6: 8, 7: 11, 8: 6, 10: 2, 11: 3, 12: 4, 13: 1, 14: 5, 15: 13, 16: 14}
-var strongMoves = [17]int{1: 19, 5: 9, 8: 25, 10: 21, 11: 22, 12: 23, 13: 20, 14: 24}
 
 type Area struct {
 	Name, Intro, Goal  string

@@ -34,7 +34,7 @@ try {
     } catch {
         throw "连接不到房主 $Server。请核对地址，并确认房主服务正在运行、网络和防火墙允许连接。"
     }
-    if ($health.service -cne 'table-card' -or $health.protocol -ne 2 -or $health.rulesVersion -cne '2026.10.07-review') {
+    if ($health.service -cne 'table-card' -or $health.protocol -ne 2 -or $health.rulesVersion -cne '2026.10.10-social-pokemon') {
         throw '服务端与当前玩家包不匹配。请房主更新本次维护版并重启服务端，再重新加入。'
     }
     Write-Host "正在连接 $Server，昵称：$Name"

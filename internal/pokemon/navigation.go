@@ -27,6 +27,14 @@ func normalizeASCII(words []string) []string {
 
 type Place struct{ Name, Detail, Panel string }
 
+// CurrentLocation gives a textual position even when a compact terminal has
+// scrolled the map diagram out of view.
+func (g *Game) CurrentLocation() string {
+	places := RegionPlaces(g.Area)
+	location := max(0, min(g.Location, len(places)-1))
+	return fmt.Sprintf("%s / %s [建筑%d]", g.AreaName(), places[location].Name, location+1)
+}
+
 var sceneNames = [12][4]string{
 	{"海风草坡", "白栅栏训练场", "博士的后院", "伙伴实验室"},
 	{"虫鸣林地", "森林营地", "博物馆侧门", "岩石道馆"},
@@ -46,7 +54,7 @@ func RegionPlaces(area int) []Place {
 	n := sceneNames[area]
 	return []Place{
 		{"城市中心", "地图墙、商店、治疗站与旅人留言板汇集于此。", "center"},
-		{n[0], "草丛中的野生伙伴正在活动，做好捕捉准备。", "grass-site"},
+		{n[0], "野外采样地点：" + EncounterLocation(area) + "。菜单说明列出该地点的物种、等级与出现概率。", "grass-site"},
 		{n[1], "本章有六名独立挑战者，胜利后才计入进度。", "trainer-site"},
 		{n[2], "主线事件与支线线索所在的调查现场。", "story-site"},
 		{n[3], "道馆或联盟考验；所需门槛会明确提示。", "gym-site"},
@@ -71,12 +79,12 @@ func (g *Game) RegionMap() string {
 	for i := range rows {
 		rows[i] = strings.ReplaceAll(rows[i], fmt.Sprintf("[%d]", g.Location+1), fmt.Sprintf("<%d>", g.Location+1))
 	}
-	return strings.Join(rows, "\n")
+	return "YOU 当前位置：" + g.CurrentLocation() + "\n" + strings.Join(rows, "\n") + "\n<编号> 你在这里 · [编号] 可前往\nX 世界旅行：W + Enter 选择地区"
 }
 
 func (g *Game) WorldMap() string {
 	chart := "[01]--[02]--[03]--[04]\n                   |\n[08]--[07]--[06]--[05]\n |\n[09]--[10]--[11]--[12]"
-	return strings.ReplaceAll(chart, fmt.Sprintf("[%02d]", g.Area+1), fmt.Sprintf("<%02d>", g.Area+1))
+	return fmt.Sprintf("YOU 当前地区：%02d %s\n", g.Area+1, g.AreaName()) + strings.ReplaceAll(chart, fmt.Sprintf("[%02d]", g.Area+1), fmt.Sprintf("<%02d>", g.Area+1)) + "\n<编号> 当前地区 · 菜单选择目的地"
 }
 
 type Choice struct {
@@ -104,8 +112,14 @@ func (g *Game) Choices(panel string, target int) []Choice {
 		}
 		p := g.Party[g.Battle.Active]
 		for i, id := range p.Moves {
+			if id < 0 || id >= len(Moves) {
+				add("未学习招式", "", "battle", 0)
+				out[len(out)-1].Enabled = false
+				continue
+			}
 			add(fmt.Sprintf("%s · PP %d/%d", Moves[id].Name, p.PP[i], Moves[id].PP), fmt.Sprintf("move %d", i+1), "battle", 0)
 		}
+		add("招式威力 / 命中 / 效果说明", "", "moves", 0)
 		add("投掷精灵球", "", "balls", 0)
 		out[len(out)-1].Enabled = g.Battle.Kind == "wild"
 		add("使用背包药品", "", "bag", 0)
@@ -136,7 +150,11 @@ func (g *Game) Choices(panel string, target int) []Choice {
 		add("旅行指南", "", "guide", 0)
 	case "map":
 		for i, p := range RegionPlaces(g.Area) {
-			add(p.Name, fmt.Sprintf("visit %d", i+1), p.Panel, 0)
+			label := fmt.Sprintf("建筑%d · %s", i+1, p.Name)
+			if i == g.Location {
+				label += " [YOU 在此]"
+			}
+			add(label, fmt.Sprintf("visit %d", i+1), p.Panel, 0)
 		}
 	case "world":
 		for i, a := range Areas {
@@ -241,6 +259,34 @@ func (g *Game) Choices(panel string, target int) []Choice {
 				next = "party"
 			}
 			add(fmt.Sprintf("%s Lv%d · HP %d/%d", p.Name(), p.Level, p.HP, p.MaxHP()), command, next, value)
+			if panel == "party" {
+				progress := p.ExperienceProgress()
+				out[len(out)-1].Detail = "Lv100 已满级"
+				if !progress.MaxLevel {
+					out[len(out)-1].Detail = fmt.Sprintf("→ Lv%d 还需 %d 经验", progress.NextLevel, progress.Remaining)
+				}
+			}
+		}
+	case "moves":
+		if g.Battle == nil {
+			return g.Choices("party", 0)
+		}
+		p := g.Party[g.Battle.Active]
+		for i, id := range p.Moves {
+			if id < 0 || id >= len(Moves) {
+				add("未学习招式", "", "moves", 0)
+				out[len(out)-1].Enabled = false
+				continue
+			}
+			add(fmt.Sprintf("%s · 查看完整说明", Moves[id].Name), "", "move-detail", i)
+		}
+		add("返回对战行动", "", "battle", 0)
+	case "move-detail":
+		if g.Battle != nil && target >= 0 && target < 4 {
+			add("使用这一个招式（消耗回合）", fmt.Sprintf("move %d", target+1), "battle", 0)
+			id := g.Party[g.Battle.Active].Moves[target]
+			out[len(out)-1].Enabled = id >= 0 && id < len(Moves) && g.Party[g.Battle.Active].PP[target] > 0
+			add("返回招式说明（不消耗回合）", "", "moves", 0)
 		}
 	case "opponent":
 		add("返回对战行动", "", "battle", 0)
@@ -315,6 +361,12 @@ func (g *Game) PanelTitle(panel string, target int) string {
 	if len(g.Party) == 0 && panel != "reset" {
 		return "大木博士实验室 · 选择初始伙伴"
 	}
+	if panel == "moves" {
+		return "招式说明 · 阅读不消耗回合"
+	}
+	if panel == "move-detail" {
+		return "招式威力、命中与效果"
+	}
 
 	if name, ok := panelNames[panel]; ok {
 		return name
@@ -334,12 +386,37 @@ func (g *Game) PanelInfo(panel string, target int) string {
 		}
 		p := g.Party[target]
 		var rows []string
-		rows = append(rows, fmt.Sprintf("%s Lv%d · %s\nHP %d/%d", p.Name(), p.Level, statusName(p.Status), p.HP, p.MaxHP()))
-		rows = append(rows, p.ExperienceSummary(), p.EvolutionSummary())
+		progress := p.ExperienceProgress()
+		if progress.MaxLevel {
+			rows = append(rows, fmt.Sprintf("%s Lv100 · 已满级", p.Name()))
+		} else {
+			rows = append(rows, fmt.Sprintf("%s → Lv%d 还需%d经验", p.Name(), progress.NextLevel, progress.Remaining))
+		}
+		rows = append(rows, p.EvolutionSummary(), fmt.Sprintf("Lv%d · HP %d/%d · %s", p.Level, p.HP, p.MaxHP(), statusName(p.Status)), p.ExperienceSummary())
 		for i, id := range p.Moves {
-			rows = append(rows, fmt.Sprintf("%d %s [%s] PP %d/%d", i+1, Moves[id].Name, TypeNames[Moves[id].Type], p.PP[i], Moves[id].PP))
+			if id < 0 || id >= len(Moves) {
+				rows = append(rows, fmt.Sprintf("招式槽%d：未学习", i+1))
+				continue
+			}
+			rows = append(rows, fmt.Sprintf("%d %s [%s] PP %d/%d\n%s", i+1, Moves[id].Name, TypeNames[Moves[id].Type], p.PP[i], Moves[id].PP, MoveDescription(id)))
 		}
 		return strings.Join(rows, "\n")
+	case "party":
+		return "每位伙伴下方直接显示下一等级与所需经验。\n选择编号查看进化等级、经验进度与招式效果。\n升级与进化不同：进化石 / 通信不会因等级自动触发。"
+	case "moves":
+		return "招式说明只读取信息，不消耗回合。\n选择编号查看威力、命中、状态 / 能力变化。\n威力不是固定伤害，实际受等级、能力与克制影响。"
+	case "move-detail":
+		if g.Battle != nil && target >= 0 && target < 4 {
+			p := g.Party[g.Battle.Active]
+			id := p.Moves[target]
+			if id < 0 || id >= len(Moves) {
+				return "这个招式槽尚未学习招式"
+			}
+			return fmt.Sprintf("%s · PP %d/%d\n%s", Moves[id].Name, p.PP[target], Moves[id].PP, MoveDescription(id))
+		}
+		return "当前没有可查看的对战招式"
+	case "grass-site":
+		return EncounterInfo(g.Area)
 	case "opponent":
 		return g.OpponentInfo()
 	case "dex-detail":
@@ -362,7 +439,7 @@ func (g *Game) PanelInfo(panel string, target int) string {
 	case "guide":
 		return "主线目标：" + g.Objective() + "\n本章训练者六场胜利、主线事件和徽章分别计数。M 地图 / C 城市中心 / Q 当地委托。\n下一页、上一页用 ] / [；药品和进化石按菜单编号选择。\nF5 自动存档重试 / F9 音乐 / Del 保存离开。"
 	case "world":
-		return "选择已解锁城市；主线推进仍需本章六次挑战、剧情及徽章。紫苑与玉虹之间可往返补完检视镜和笛子事件。"
+		return "YOU 当前地区：" + g.AreaName() + "\n选择标有已解锁的目的地；到达后位于该地区城市中心。主线推进仍需本章六次挑战、剧情及徽章。"
 	case "reset":
 		return "这会替换当前昵称的存档。选择1确认；选择2取消。旧存档损坏时请先自行备份。"
 	}

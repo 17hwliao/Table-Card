@@ -46,6 +46,9 @@ func Load(name string) (*Game, error) {
 	if err = json.Unmarshal(data, &s); err != nil {
 		return g, fmt.Errorf("无法解析存档：%w", err)
 	}
+	if err = NormalizeData(&s); err != nil {
+		return g, err
+	}
 	if err = validate(s); err != nil {
 		return g, err
 	}
@@ -53,7 +56,7 @@ func Load(name string) (*Game, error) {
 		return g, errors.New("存档昵称不匹配")
 	}
 	g.State = s
-	g.Version = 2
+	g.Version = 3
 	return g, nil
 }
 func (g *Game) Save() error {
@@ -98,7 +101,7 @@ func validate(s State) error {
 	bad := func() error {
 		return errors.New("存档结构不合法；请备份存档后再决定是否输入“new yes”")
 	}
-	if (s.Version != 1 && s.Version != 2) || s.Area < 0 || s.Area >= len(Areas) || s.Unlocked < s.Area || s.Unlocked >= len(Areas) || s.Money < 0 || s.Money > 1000000000 || s.Elite < 0 || s.Elite > 5 || len(s.Party) > 6 || len(s.Box) > 600 || len(s.TrainerWins) != len(Areas) || len(s.Badges) > 8 || len(s.Log) > 120 || len(s.Name) > 200 {
+	if (s.Version != 1 && s.Version != 2 && s.Version != 3) || s.Area < 0 || s.Area >= len(Areas) || s.Unlocked < s.Area || s.Unlocked >= len(Areas) || s.Money < 0 || s.Money > 1000000000 || s.Elite < 0 || s.Elite > 5 || len(s.Party) > 6 || len(s.Box) > 600 || len(s.TrainerWins) != len(Areas) || len(s.Badges) > 8 || len(s.Log) > 120 || len(s.Name) > 200 {
 		return bad()
 	}
 	if s.Items == nil || s.Flags == nil || s.Seen == nil || s.Caught == nil {
@@ -131,7 +134,10 @@ func validate(s State) error {
 		}
 	}
 	checkMon := func(m Monster) bool {
-		if m.Species < 1 || m.Species > 151 || m.Level < 1 || m.Level > 100 || m.Exp < ExperienceAtLevel(m.Level) || m.Exp > 1000000 || m.HP < 0 || m.HP > m.MaxHP() || m.Sleep < 0 || m.Sleep > 4 {
+		if !ValidateCombat(m.Combat) {
+			return false
+		}
+		if m.Species < 1 || m.Species > 151 || m.Level < 1 || m.Level > 100 || m.Exp < ExperienceForSpecies(m.Species, m.Level) || m.Exp > ExperienceForSpecies(m.Species, 100) || m.HP < 0 || m.HP > m.MaxHP() || m.Sleep < 0 || m.Sleep > 4 {
 			return false
 		}
 		switch m.Status {
@@ -140,6 +146,9 @@ func validate(s State) error {
 			return false
 		}
 		for i, id := range m.Moves {
+			if id == -1 && m.PP[i] == 0 {
+				continue
+			}
 			if id < 0 || id >= len(Moves) || m.PP[i] < 0 || m.PP[i] > Moves[id].PP {
 				return false
 			}

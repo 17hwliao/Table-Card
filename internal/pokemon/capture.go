@@ -78,9 +78,13 @@ func (g *Game) AdvanceCapture() {
 		g.obtain(foe)
 		g.Battle = nil
 		g.Capture = nil
+		for i := range g.Party {
+			ResetCombat(&g.Party[i])
+		}
 	}
 }
 func (g *Game) obtain(m Monster) {
+	ResetCombat(&m)
 	if len(g.Party) >= 6 && len(g.Box) >= 600 {
 		g.say("电脑已满，无法接收赠送精灵；请先整理电脑。")
 		return

@@ -14,7 +14,7 @@ import (
 type Mode string
 
 // Additive rule/UI changes still need a matching backend to take effect.
-const RulesVersion = "2026.10.07-review"
+const RulesVersion = "2026.10.10-social-pokemon"
 
 const (
 	LandlordMode     Mode = "landlord"

@@ -25,7 +25,14 @@ type roomRuntime struct {
 func newRoomRuntime() *roomRuntime {
 	return &roomRuntime{nextBot: time.Now().Add(3 * time.Second), recorded: map[string]bool{}, previousScores: map[string]int{}, missing: map[string]time.Time{}}
 }
-func (s *Server) Close() { s.stopOnce.Do(func() { close(s.stop) }) }
+func (s *Server) Close() {
+	s.stopOnce.Do(func() {
+		close(s.stop)
+		for _, p := range s.socialPeers() {
+			p.cancel()
+		}
+	})
+}
 func (s *Server) tickLoop() {
 	timer := time.NewTicker(100 * time.Millisecond)
 	defer timer.Stop()
@@ -183,6 +190,7 @@ func (s *Server) removeRoom(code string) {
 	s.mu.Unlock()
 	delete(s.runtime, code)
 	s.idleRelease.Store(true)
+	s.broadcastPresenceLocked()
 }
 
 func (s *Server) takeIdleRelease(now time.Time) bool {
@@ -296,6 +304,7 @@ func (s *Server) quickMatch(w http.ResponseWriter, r *http.Request) {
 	rt := newRoomRuntime()
 	rt.matchAt = time.Now().Add(15 * time.Second)
 	s.runtime[room.Snapshot().Code] = rt
+	s.broadcastPresenceLocked()
 	writeJSON(w, 201, room.Snapshot())
 }
 func (s *Server) startMatched(room *table.Room) error {

@@ -30,6 +30,9 @@ func (m *Model) pokemonOptions() []pokemon.Choice {
 	if g == nil {
 		return nil
 	}
+	if choices := m.pokemonSocialOptions(); choices != nil {
+		return choices
+	}
 	if m.pokemonPanel == "" {
 		m.pokemonPanel = "root"
 	}
@@ -43,6 +46,10 @@ func (m *Model) pokemonOptions() []pokemon.Choice {
 	if c.game != g || c.revision != g.LogRevision() || c.panel != m.pokemonPanel || c.target != m.pokemonTarget {
 		*c = pokemonNavigationCache{game: g, revision: g.LogRevision(), panel: m.pokemonPanel, target: m.pokemonTarget, choices: g.Choices(m.pokemonPanel, m.pokemonTarget)}
 	}
+	if (m.pokemonPanel == "root" || m.pokemonPanel == "center" || m.pokemonPanel == "guide") && g.Battle == nil && len(g.Party) > 0 {
+		out := append([]pokemon.Choice(nil), c.choices...)
+		return append(out, netOption("训练家联机中心 · 对战 / 交换", "net sync", "online"))
+	}
 	return c.choices
 }
 func (m *Model) pokemonWide() bool { return m.width >= 96 && m.height >= 28 }
@@ -53,15 +60,24 @@ func (m *Model) pokemonLogRows() int {
 	return 3
 }
 func (m *Model) pokemonBodyRows() int { return max(4, m.height-9-m.pokemonLogRows()) }
-func (m *Model) pokemonPageSize() int {
+func (m *Model) pokemonInfoRows() int {
 	if m.pokemonWide() {
-		return min(9, max(1, m.pokemonBodyRows()-2))
+		return m.pokemonBodyRows()
 	}
-	infoRows := min(4, max(1, m.pokemonBodyRows()-4))
 	if m.pokemonPanel == "map" || m.pokemonPanel == "world" {
-		infoRows = min(7, max(1, m.pokemonBodyRows()-3))
+		return min(7, max(1, m.pokemonBodyRows()-3))
 	}
-	return max(1, min(9, m.pokemonBodyRows()-infoRows-2))
+	return min(4, max(1, m.pokemonBodyRows()-4))
+}
+func (m *Model) pokemonPageSize() int {
+	rowCost := 1
+	if m.pokemonPanel == "party" {
+		rowCost = 2 // HP row + always-visible next-level experience row.
+	}
+	if m.pokemonWide() {
+		return min(9, max(1, (m.pokemonBodyRows()-2)/rowCost))
+	}
+	return max(1, min(9, (m.pokemonBodyRows()-m.pokemonInfoRows()-2)/rowCost))
 }
 func (m *Model) pokemonOpen(panel string, target int) {
 	if panel == "" {
@@ -99,6 +115,9 @@ func (m *Model) pokemonBack() {
 }
 func (m *Model) pokemonChoose(input string) tea.Cmd {
 	input = strings.ToLower(strings.TrimSpace(input))
+	if handled, cmd := m.handlePokemonSocialInput(input); handled {
+		return cmd
+	}
 	if input == "0" || input == "back" {
 		m.pokemonBack()
 		return nil
@@ -155,6 +174,22 @@ func (m *Model) pokemonChoose(input string) tea.Cmd {
 		m.status = "菜单已打开 · 本页数字+Enter · 0 / Esc 返回"
 		return nil
 	}
+	if handled, cmd := m.handlePokemonSocialInput(command); handled {
+		if next != "" {
+			m.pokemonOpen(next, target)
+		}
+		return cmd
+	}
+	if m.pokemonOffer != nil || m.pokemonSocialPending {
+		m.status = "联机邀请或同步进行中；L查看，先接受/取消后再冒险"
+		return nil
+	}
+	wasSocialReady := m.pokemonSocialReady
+	m.pokemonSocialReady = false
+	var pauseCmd tea.Cmd
+	if wasSocialReady {
+		pauseCmd = m.socialSend(map[string]any{"type": "pokemon_pause"})
+	}
 	if m.pokemonLoadError && command != "new yes" && command != "新冒险 确认" {
 		m.status = "备份原存档后输入 new yes 确认重置，或Del返回"
 		return nil
@@ -172,7 +207,7 @@ func (m *Model) pokemonChoose(input string) tea.Cmd {
 			m.pokemonGame.Notice(err.Error())
 			m.status = err.Error()
 			m.savePokemon()
-			return nil
+			return pauseCmd
 		}
 		if next != "" {
 			m.pokemonOpen(next, target)
@@ -196,12 +231,15 @@ func (m *Model) pokemonChoose(input string) tea.Cmd {
 		if !saved {
 			m.status += "；投球仍继续"
 		}
-		return m.pokemonTimer()
+		return tea.Batch(pauseCmd, m.pokemonTimer())
 	}
-	return nil
+	return pauseCmd
 }
 
 func (m *Model) pokemonView() string {
+	if m.pokemonDuel != nil {
+		return m.pokemonDuelView()
+	}
 	g := m.pokemonGame
 	if g == nil {
 		return "准备文字冒险…"
@@ -212,7 +250,12 @@ func (m *Model) pokemonView() string {
 	width := m.width - 4
 	if m.pokemonCache.game != g || m.pokemonCache.revision != g.LogRevision() || m.pokemonCache.width != width {
 		header := titleStyle.Render("牌桌 / 宝可梦 · "+g.AreaName()) + "\n" + muted.Render(fmt.Sprintf("%s · $%d · 挑战%d/6 · 徽章%d/8 · 支线%d/12", g.Name, g.Money, g.TrainerWins[g.Area], len(g.Badges), g.QuestCount()))
-		header += "\n" + ansi.Truncate("目标："+g.Objective(), width, "… [H指南]")
+		header += "\n" + ansi.Truncate("YOU 当前位置："+g.CurrentLocation(), width, "… [M地图]")
+		if g.Battle != nil {
+			header += "\n" + ansi.Truncate("对战对象："+g.Battle.Name+" · V 对手队伍 / P 伙伴", width, "…")
+		} else {
+			header += "\n" + ansi.Truncate("目标："+g.Objective(), width, "… [H指南]")
+		}
 		var logs []string
 		for _, entry := range g.Log {
 			logs = append(logs, strings.Split(ansi.Wrap(entry, width, ""), "\n")...)
@@ -241,26 +284,31 @@ func (m *Model) pokemonView() string {
 		} else {
 			menu = append(menu, ansi.Truncate(label, menuWidth, "…"))
 		}
+		if c.Detail != "" {
+			menu = append(menu, muted.Render(ansi.Truncate("    "+c.Detail, menuWidth, "…")))
+		}
 	}
 	if len(choices) == 0 {
 		menu = append(menu, muted.Render("这里暂无物品或伙伴；0 返回"))
 	}
 	menu = append(menu, muted.Render(fmt.Sprintf("第%d/%d页 · [ / ] 翻页 · 0 返回", m.pokemonOptionPage+1, pages)))
 	infoWidth := width
-	infoRows := min(4, max(1, m.pokemonBodyRows()-4))
+	infoRows := m.pokemonInfoRows()
 	if m.pokemonWide() {
 		infoWidth = 33
 		infoRows = m.pokemonBodyRows()
 	}
 	var info string
-	if b := g.Battle; b != nil {
+	if strings.HasPrefix(m.pokemonPanel, "net-") || m.pokemonPanel == "online" {
+		info = m.pokemonSocialInfo()
+	} else if b := g.Battle; b != nil {
 		p, f := g.Party[b.Active], b.Foes[b.Enemy]
 		total, remaining, _ := b.OpponentCounts()
 		info = fmt.Sprintf("对手剩余 %d/%d 只 · 出场 %d/%d\n%s Lv%d\n%s [%s]\n伙伴 %s Lv%d\n%s [%s]\n对战：%s", remaining, total, b.Enemy+1, total, f.Name(), f.Level, hpBar(f.HP, f.MaxHP()), f.Status, p.Name(), p.Level, hpBar(p.HP, p.MaxHP()), p.Status, b.Name)
 		if g.Busy() {
 			info += "\n精灵球 " + strings.Repeat("● ", g.Capture.Step) + strings.Repeat("○ ", 3-g.Capture.Step) + "摇动中"
 		}
-		if m.pokemonPanel == "detail" || m.pokemonPanel == "opponent" {
+		if m.pokemonPanel == "detail" || m.pokemonPanel == "opponent" || m.pokemonPanel == "moves" || m.pokemonPanel == "move-detail" || m.pokemonPanel == "party" {
 			// Put the requested status first, including on small terminals.
 			info = g.PanelInfo(m.pokemonPanel, m.pokemonTarget) + "\n\n" + info
 		} else if m.pokemonPanel != "battle" {
@@ -269,13 +317,10 @@ func (m *Model) pokemonView() string {
 	} else if m.pokemonPanel == "map" || m.pokemonPanel == "world" {
 		info = g.RegionMap()
 		if m.pokemonPanel == "world" {
-			info = g.WorldMap() + "\n<编号> 当前位置 · 解锁后可旅行"
-		}
-		if !m.pokemonWide() {
-			infoRows = min(7, max(1, m.pokemonBodyRows()-3))
+			info = g.WorldMap()
 		}
 	} else if m.pokemonWide() && (m.pokemonPanel == "center" || m.pokemonPanel == "root" || m.pokemonPanel == "shop") {
-		info = g.RegionMap() + "\n<编号> 当前建筑 / X 出城旅行\n" + g.PanelInfo(m.pokemonPanel, m.pokemonTarget)
+		info = g.RegionMap() + "\n" + g.PanelInfo(m.pokemonPanel, m.pokemonTarget)
 	} else {
 		info = g.PanelInfo(m.pokemonPanel, m.pokemonTarget)
 	}
@@ -320,9 +365,13 @@ const pokemonRules = `宝可梦 · 数字菜单文字冒险
 M 地区地图 / C 城市中心 / W 世界地图 / H 指南。
 P 队伍 / B 背包 / Q 支线 / V 对手；字母也需 Enter。
 伙伴详情显示升级经验和进化条件；↑↓阅读。
+队伍列表直接列出下一等级与还需经验，不必进入详情。
+YOU 标记当前地区与建筑；世界地图菜单选择目的地。
 初始伙伴1妙蛙种子 / 2小火龙 / 3杰尼龟。
 主线每章六名训练者 → 剧情 → 道馆 → 下一章。
 战斗1–4招式；菜单提供球种、药品、换人和逃跑。
+招式说明可查看威力、命中、伤害类别与状态效果；阅读不耗回合。
+训练家和馆主登场时播报名号与第一位伙伴。
 catch 1–4 投球；三次摇球都通过才成功。
 商店编号选商品、再选数量；全部货品列在各页。
 buy pokeball 5 / use potion 1 / evolve thunderstone 1。

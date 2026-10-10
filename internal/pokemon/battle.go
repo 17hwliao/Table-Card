@@ -17,23 +17,32 @@ func (g *Game) battleCommand(command string, words []string) error {
 			return errors.New("招式编号为1–4")
 		}
 		p := &g.Party[b.Active]
+		if p.Moves[n-1] < 0 {
+			return errors.New("该招式槽尚未学习招式")
+		}
 		hasPP := false
 		for _, pp := range p.PP {
 			hasPP = hasPP || pp > 0
 		}
-		if hasPP && p.PP[n-1] == 0 {
+		if hasPP && p.PP[n-1] == 0 && p.Combat.ChargeMove == 0 && p.Combat.RepeatTurns == 0 {
 			return errors.New("该招式PP耗尽，请选择其他招式")
+		}
+		if p.Combat.DisableSlot == n && p.Combat.DisableTurns > 0 {
+			return errors.New("该招式暂时被封锁，请选择其他招式")
 		}
 		foe := &b.Foes[b.Enemy]
 		enemyMove := g.enemyMove(foe, p)
-		if speed(p) > speed(foe) || (speed(p) == speed(foe) && g.rng.Intn(2) == 0) {
+		p.Combat.LastDamage = 0
+		foe.Combat.LastDamage = 0
+		pp, fp := movePriority(p, n-1), movePriority(foe, enemyMove)
+		if pp > fp || (pp == fp && (speed(p) > speed(foe) || (speed(p) == speed(foe) && g.rng.Intn(2) == 0))) {
 			g.attack(p, foe, n-1)
-			if foe.HP > 0 && p.HP > 0 {
+			if g.Battle != nil && foe.HP > 0 && p.HP > 0 {
 				g.attack(foe, p, enemyMove)
 			}
 		} else {
 			g.attack(foe, p, enemyMove)
-			if p.HP > 0 && foe.HP > 0 {
+			if g.Battle != nil && p.HP > 0 && foe.HP > 0 {
 				g.attack(p, foe, n-1)
 			}
 		}
@@ -53,6 +62,8 @@ func (g *Game) battleCommand(command string, words []string) error {
 		if n < 0 || n >= len(g.Party) || g.Party[n].HP <= 0 || n == b.Active {
 			return errors.New("请选择另一只仍有战斗能力的队伍精灵")
 		}
+		ResetCombat(&g.Party[b.Active])
+		ResetCombat(&g.Party[n])
 		b.Active = n
 		g.say("换上%s！", g.Party[n].Name())
 		g.enemyTurn()
@@ -67,6 +78,9 @@ func (g *Game) battleCommand(command string, words []string) error {
 		if g.rng.Float64() < max(0.1, min(0.95, chance)) {
 			g.say("成功离开草丛。散步后还可以再次探索。")
 			g.Battle = nil
+			for i := range g.Party {
+				ResetCombat(&g.Party[i])
+			}
 		} else {
 			g.say("没有逃脱！")
 			g.enemyTurn()
@@ -77,7 +91,7 @@ func (g *Game) battleCommand(command string, words []string) error {
 	return nil
 }
 func speed(m *Monster) int {
-	s := m.stat(Dex[m.Species].Speed)
+	s := combatStat(m, Dex[m.Species].Speed, 3)
 	if m.Status == "麻痹" {
 		s = max(1, s/4)
 	}
@@ -99,7 +113,7 @@ var effectiveness = map[int]map[int]float64{
 
 func typeFactor(t int, m *Monster) float64 {
 	f := 1.0
-	for _, target := range Dex[m.Species].Types {
+	for _, target := range EffectiveTypes(m) {
 		if v, ok := effectiveness[t][target]; ok {
 			f *= v
 		}
@@ -111,24 +125,39 @@ func damageEstimate(a, d *Monster, move Move) float64 {
 	if f == 0 {
 		return 0
 	}
-	if move.Name == "龙之怒" {
+	if move.Key == "DRAGON_RAGE" {
 		return 40
 	}
-	if move.Name == "黑夜魔影" {
+	if move.Key == "NIGHT_SHADE" || move.Key == "SEISMIC_TOSS" {
 		return float64(a.Level)
+	}
+	if move.Key == "SONICBOOM" {
+		return 20
+	}
+	if move.Key == "SUPER_FANG" {
+		return float64(max(1, d.HP/2))
 	}
 	if move.Power == 0 {
 		return 0
 	}
-	atk, def := a.stat(Dex[a.Species].Attack), d.stat(Dex[d.Species].Defense)
+	atk, def := combatStat(a, Dex[a.Species].Attack, 0), combatStat(d, Dex[d.Species].Defense, 1)
 	if move.Type >= 10 {
-		atk = a.stat(Dex[a.Species].Special)
-		def = d.stat(Dex[d.Species].Special)
+		atk = combatStat(a, Dex[a.Species].Special, 2)
+		def = combatStat(d, Dex[d.Species].Special, 2)
+		if d.Combat.LightScreen {
+			def *= 2
+		}
 	} else if a.Status == "灼伤" {
 		atk = max(1, atk/2)
 	}
+	if move.Type < 10 && d.Combat.Reflect {
+		def *= 2
+	}
+	if move.Effect == "EXPLODE_EFFECT" {
+		def = max(1, def/2)
+	}
 	stab := 1.0
-	for _, t := range Dex[a.Species].Types {
+	for _, t := range EffectiveTypes(a) {
 		if move.Type == t {
 			stab = 1.5
 		}
@@ -139,12 +168,12 @@ func (g *Game) enemyMove(a, d *Monster) int {
 	best := -1
 	score := -1.0
 	for i, id := range a.Moves {
-		if a.PP[i] <= 0 {
+		if id < 0 || a.PP[i] <= 0 || (a.Combat.DisableSlot == i+1 && a.Combat.DisableTurns > 0) {
 			continue
 		}
 		move := Moves[id]
 		s := damageEstimate(a, d, move)
-		if move.Power == 0 && move.Status != "" && d.Status == "" && typeFactor(move.Type, d) > 0 {
+		if status, _ := moveStatus(move); move.Power == 0 && status != "" && d.Status == "" && typeFactor(move.Type, d) > 0 {
 			s = 12 + g.rng.Float64()*18
 		}
 		s *= float64(move.Accuracy) / 100
@@ -156,97 +185,6 @@ func (g *Game) enemyMove(a, d *Monster) int {
 		return 0
 	}
 	return best
-}
-func (g *Game) attack(a, d *Monster, slot int) {
-	if a.HP <= 0 || d.HP <= 0 {
-		return
-	}
-	switch a.Status {
-	case "睡眠":
-		a.Sleep--
-		if a.Sleep > 0 {
-			g.say("%s仍在睡眠。", a.Name())
-			return
-		}
-		a.Status = ""
-		g.say("%s醒来了。", a.Name())
-	case "冰冻":
-		if g.rng.Intn(5) != 0 {
-			g.say("%s被冻结，无法行动。", a.Name())
-			return
-		}
-		a.Status = ""
-		g.say("%s解冻了。", a.Name())
-	case "麻痹":
-		if g.rng.Intn(4) == 0 {
-			g.say("%s因麻痹无法行动。", a.Name())
-			return
-		}
-	}
-	move := Moves[a.Moves[slot]]
-	struggle := true
-	for _, pp := range a.PP {
-		if pp > 0 {
-			struggle = false
-		}
-	}
-	if struggle {
-		move = Move{Name: "挣扎", Type: 1, Power: 50, Accuracy: 100}
-	} else {
-		if a.PP[slot] <= 0 {
-			return
-		}
-		a.PP[slot]--
-	}
-	g.say("%s使用%s！", a.Name(), move.Name)
-	if g.rng.Intn(100) >= move.Accuracy {
-		g.say("攻击没有命中。")
-		return
-	}
-	factor := typeFactor(move.Type, d)
-	if struggle {
-		factor = 1
-	}
-	if factor == 0 {
-		g.say("对%s没有效果。", d.Name())
-		return
-	}
-	amount := 0
-	if move.Power > 0 || move.Name == "黑夜魔影" {
-		estimate := damageEstimate(a, d, move)
-		if struggle {
-			estimate = float64(a.Level + 10)
-		}
-		amount = max(1, int(estimate*float64(217+g.rng.Intn(39))/255))
-		if move.Name == "龙之怒" || move.Name == "黑夜魔影" {
-			amount = int(estimate)
-		}
-		amount = min(amount, d.HP)
-		d.HP -= amount
-		g.say("造成%d伤害，%s HP %d/%d。", amount, d.Name(), d.HP, d.MaxHP())
-		if factor > 1 {
-			g.say("效果拔群！")
-		} else if factor < 1 {
-			g.say("效果不佳。")
-		}
-	}
-	if move.Name == "吸血" {
-		a.HP = min(a.MaxHP(), a.HP+max(1, amount/2))
-	}
-	if struggle {
-		a.HP = max(0, a.HP-max(1, amount/4))
-	}
-	if d.HP > 0 && d.Status == "" && move.Status != "" && g.rng.Intn(100) < move.Chance {
-		immune := false
-		for _, t := range Dex[d.Species].Types {
-			immune = immune || (move.Status == "中毒" && t == 4) || (move.Status == "灼伤" && t == 10) || (move.Status == "冰冻" && t == 15)
-		}
-		if !immune {
-			d.Status = move.Status
-			d.Sleep = 2 + g.rng.Intn(3)
-			g.say("%s陷入%s。", d.Name(), d.Status)
-		}
-	}
 }
 func (g *Game) enemyTurn() {
 	if g.Battle == nil {
@@ -264,13 +202,7 @@ func (g *Game) endTurn() {
 	}
 	b.Turns++
 	p, f := &g.Party[b.Active], &b.Foes[b.Enemy]
-	for _, m := range []*Monster{p, f} {
-		if m.HP > 0 && (m.Status == "中毒" || m.Status == "灼伤") {
-			amount := max(1, m.MaxHP()/8)
-			m.HP = max(0, m.HP-amount)
-			g.say("%s受到%s伤害，HP %d/%d。", m.Name(), m.Status, m.HP, m.MaxHP())
-		}
-	}
+	g.EndResidual(p, f)
 	if f.HP <= 0 {
 		g.say("%s失去战斗能力。", f.Name())
 		g.gainExp(b.Active, Dex[f.Species].BaseExp*f.Level/7)
@@ -287,10 +219,13 @@ func (g *Game) endTurn() {
 		return
 	}
 	if p.HP <= 0 {
+		ResetCombat(p)
 		b.Active = g.activeIndex()
+		ResetCombat(&g.Party[b.Active])
 		g.say("自动换上%s。", g.Party[b.Active].Name())
 	}
 	if f.HP <= 0 {
+		ResetCombat(f)
 		b.Enemy++
 		if b.Enemy >= len(b.Foes) {
 			g.victory()
@@ -302,8 +237,8 @@ func (g *Game) endTurn() {
 func (g *Game) gainExp(index, amount int) {
 	m := &g.Party[index]
 	g.say("%s得到%d经验。", m.Name(), amount)
-	m.Exp = min(1000000, m.Exp+max(1, amount))
-	for m.Level < 100 && m.Exp >= ExperienceAtLevel(m.Level+1) {
+	m.Exp = min(ExperienceForSpecies(m.Species, 100), m.Exp+max(1, amount))
+	for m.Level < 100 && m.Exp >= ExperienceForSpecies(m.Species, m.Level+1) {
 		oldHP := m.MaxHP()
 		m.Level++
 		if m.HP > 0 {
@@ -320,16 +255,47 @@ func (g *Game) gainExp(index, amount int) {
 	}
 }
 func (g *Game) refreshMoves(m *Monster) {
-	next := moveSet(m.Species, m.Level)
-	if m.Signature {
-		next[3] = signatureMove(m.Species)
+	if m.Combat.TransformedSpecies > 0 {
+		original := *m
+		ResetCombat(&original)
+		g.refreshMoves(&original)
+		m.Combat.OriginalMoves = original.Moves
+		m.Combat.OriginalPP = original.PP
+		return
 	}
-	for i, id := range next {
-		if id != m.Moves[i] {
-			m.PP[i] = Moves[id].PP
+	SanitizeMonster(m)
+	for _, entry := range Dex[m.Species].Learnset {
+		if entry.Level != m.Level {
+			continue
 		}
+		known := false
+		for _, id := range m.Moves {
+			known = known || id == entry.Move
+		}
+		if known {
+			continue
+		}
+		slot := -1
+		for i, id := range m.Moves {
+			if id < 0 {
+				slot = i
+				break
+			}
+		}
+		if slot < 0 {
+			slot = 0
+			copy(m.Moves[:3], m.Moves[1:])
+			copy(m.PP[:3], m.PP[1:])
+			slot = 3
+		}
+		m.Moves[slot] = entry.Move
+		m.PP[slot] = Moves[entry.Move].PP
+		g.say("%s学会%s！", m.Name(), Moves[entry.Move].Name)
 	}
-	m.Moves = next
+	if m.Signature {
+		m.Moves[3] = signatureMove(m.Species)
+		m.PP[3] = min(m.PP[3], Moves[m.Moves[3]].PP)
+	}
 }
 func (g *Game) evolveMonster(m *Monster, id int) {
 	old := m.Name()
@@ -345,6 +311,9 @@ func (g *Game) evolveMonster(m *Monster, id int) {
 }
 func (g *Game) victory() {
 	b := g.Battle
+	for i := range g.Party {
+		ResetCombat(&g.Party[i])
+	}
 	g.Battle = nil
 	if b.Kind == "wild" {
 		g.say("野生对战结束。捕获需要在对手倒下前投球。")

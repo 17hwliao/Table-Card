@@ -42,18 +42,13 @@ func main() {
 		_ = httpServer.Close()
 	}()
 
-	log.Printf("牌桌终端服务已启动，监听 %s", listener.Addr())
+	log.Printf("牌桌终端服务已启动，监听端口 %d", listener.Addr().(*net.TCPAddr).Port)
 	info := server.ConnectionInfoFor(listener.Addr())
 	fmt.Println("\n牌桌服务已启动 · 客户端连接地址")
-	if info.Local != "" {
-		fmt.Printf("仅本机使用：%s\n", info.Local)
-	}
 	if len(info.Addresses) > 0 {
-		fmt.Println("同一局域网的玩家，在客户端输入以下地址：")
-		for _, entry := range info.Addresses {
-			fmt.Printf("  %s  （%s）\n", entry.Address, entry.Interface)
-		}
-		fmt.Println("多个地址时，选择与玩家同一网络的 Wi-Fi / 以太网地址。")
+		fmt.Println("同一局域网的玩家，在客户端输入当前地址：")
+		entry := info.Addresses[0]
+		fmt.Printf("  %s  （%s）\n", entry.Address, entry.Interface)
 	} else {
 		fmt.Println("未发现可分享的网卡地址；检查网络连接及服务监听范围。")
 	}

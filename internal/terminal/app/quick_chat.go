@@ -16,17 +16,23 @@ func (m *Model) quickChatKey(key string) tea.Cmd {
 	}
 	if key == "delete" {
 		m.quickChat = false
+		if m.page == pokemonScreen {
+			return m.pokemonKey(tea.KeyPressMsg{Code: tea.KeyDelete})
+		}
+		if m.page == snakeScreen {
+			return m.snakeKey("delete")
+		}
 		return m.leave()
 	}
 	n, err := strconv.Atoi(key)
-	if err != nil || n < 1 || n > len(quickPhrases) || m.api == nil {
+	if err != nil || n < 1 || n > len(quickPhrases) || !m.socialReady {
 		return nil
 	}
-	client, text := m.api, quickPhrases[n-1]
+	text := quickPhrases[n-1]
 	m.quickChat = false
 	m.chatOn = false
 	m.chat.Blur()
-	return func() tea.Msg { return chatSent{err: client.Send(map[string]any{"type": "chat", "text": text})} }
+	return m.sendChatText(text)
 }
 func (m *Model) quickChatView() string {
 	rows := []string{titleStyle.Render("聊天短语 · 只需数字"), ""}

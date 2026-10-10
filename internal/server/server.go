@@ -16,6 +16,7 @@ import (
 )
 
 type Server struct {
+	pokemonSocial *pokemonSocialStore
 	listenAddress net.Addr
 	opMu          sync.Mutex
 	runtime       map[string]*roomRuntime
@@ -29,6 +30,7 @@ type Server struct {
 	mu            sync.RWMutex
 	engines       map[string]games.Engine
 	hub           *roomHub
+	social        *socialHub
 }
 
 type modeInfo struct {
@@ -53,11 +55,13 @@ var modes = []modeInfo{
 
 func New() *Server {
 	s := &Server{
-		rooms: table.NewRoomManager(), registry: games.NewDefaultRegistry(),
-		engines: make(map[string]games.Engine), hub: newRoomHub(),
+		pokemonSocial: newPokemonSocialStore(),
+		rooms:         table.NewRoomManager(), registry: games.NewDefaultRegistry(),
+		engines: make(map[string]games.Engine), hub: newRoomHub(), social: newSocialHub(),
 		runtime: make(map[string]*roomRuntime), stats: newStatStore(), stop: make(chan struct{}),
 	}
 	go s.tickLoop()
+	go s.pokemonMaintenanceLoop()
 	return s
 }
 
@@ -72,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/match", bufferedHTTP(s.quickMatch))
 	mux.HandleFunc("GET /api/stats", bufferedHTTP(s.playerStats))
 	mux.HandleFunc("GET /api/rooms/{code}/ws", s.roomWebSocket)
+	mux.HandleFunc("GET /api/social/ws", s.socialWebSocket)
 	mux.HandleFunc("/api/rooms/", bufferedHTTP(s.roomRoute))
 	return mux
 }
@@ -153,6 +158,7 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.broadcastPresenceLocked()
 	writeJSON(w, http.StatusCreated, room.Snapshot())
 }
 

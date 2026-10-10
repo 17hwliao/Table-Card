@@ -5,11 +5,44 @@ import (
 	"strings"
 )
 
-// ExperienceAtLevel is the shared cubic growth curve used by this adventure.
-// It deliberately matches existing saves, rather than changing species growth.
+// ExperienceAtLevel remains the legacy save curve. New monsters use their
+// species' documented Gen I growth curve via ExperienceForSpecies.
 func ExperienceAtLevel(level int) int {
 	level = max(1, min(100, level))
 	return level * level * level
+}
+
+func ExperienceForSpecies(species, level int) int {
+	level = max(1, min(100, level))
+	if level == 1 {
+		return 0
+	}
+	n := level * level * level
+	switch Dex[species].Growth {
+	case "FAST":
+		return 4 * n / 5
+	case "SLOW":
+		return 5 * n / 4
+	case "MEDIUM_SLOW":
+		return max(0, 6*n/5-15*level*level+100*level-140)
+	default:
+		return n
+	}
+}
+
+// MigrateMonsterExperience retains level and fraction earned at that level.
+// Call only once when importing the legacy v1/v2 cubic-curve save.
+func MigrateMonsterExperience(m *Monster) {
+	oldStart := ExperienceAtLevel(m.Level)
+	newStart := ExperienceForSpecies(m.Species, m.Level)
+	if m.Level >= 100 {
+		m.Exp = newStart
+		return
+	}
+	oldRequired := ExperienceAtLevel(m.Level+1) - oldStart
+	earned := max(0, min(oldRequired-1, m.Exp-oldStart))
+	newRequired := ExperienceForSpecies(m.Species, m.Level+1) - newStart
+	m.Exp = newStart + earned*newRequired/max(1, oldRequired)
 }
 
 type ExperienceProgress struct {
@@ -23,9 +56,9 @@ func (m Monster) ExperienceProgress() ExperienceProgress {
 		return progress
 	}
 	progress.NextLevel = m.Level + 1
-	progress.Required = ExperienceAtLevel(progress.NextLevel) - ExperienceAtLevel(m.Level)
-	progress.Earned = max(0, min(progress.Required, m.Exp-ExperienceAtLevel(m.Level)))
-	progress.Remaining = max(0, ExperienceAtLevel(progress.NextLevel)-m.Exp)
+	progress.Required = ExperienceForSpecies(m.Species, progress.NextLevel) - ExperienceForSpecies(m.Species, m.Level)
+	progress.Earned = max(0, min(progress.Required, m.Exp-ExperienceForSpecies(m.Species, m.Level)))
+	progress.Remaining = max(0, ExperienceForSpecies(m.Species, progress.NextLevel)-m.Exp)
 	return progress
 }
 
@@ -49,7 +82,7 @@ func (m Monster) EvolutionSummary() string {
 		case e.Item != "":
 			rows = append(rows, fmt.Sprintf("进化 → %s：使用%s\n  不靠经验进化，背包选择进化石", name, e.Item))
 		case e.Trade:
-			rows = append(rows, fmt.Sprintf("进化 → %s：本地通信进化\n  不靠经验进化，伙伴菜单选择通信", name))
+			rows = append(rows, fmt.Sprintf("进化 → %s：与在线玩家完成交换后进化\n  不靠经验进化，伙伴菜单选择交换", name))
 		case e.Level > 0:
 			if m.Level >= 100 {
 				rows = append(rows, fmt.Sprintf("进化 → %s：已满级，无法再通过升级触发进化", name))
@@ -58,7 +91,7 @@ func (m Monster) EvolutionSummary() string {
 			// Level evolutions are checked when gaining a level, including wild
 			// monsters caught at or above their species' evolution threshold.
 			target := max(e.Level, m.Level+1)
-			remaining := max(0, ExperienceAtLevel(target)-m.Exp)
+			remaining := max(0, ExperienceForSpecies(m.Species, target)-m.Exp)
 			condition := fmt.Sprintf("达到 Lv%d", e.Level)
 			if m.Level >= e.Level {
 				condition = fmt.Sprintf("等级已达标，下次升级至 Lv%d 时进化", target)

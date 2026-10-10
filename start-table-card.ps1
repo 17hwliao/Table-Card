@@ -14,7 +14,7 @@ $runtimeDir = Join-Path $projectRoot 'runtime'
 function Test-CompatibleServer([string]$Address) {
     try {
         $health = Invoke-RestMethod -Uri "http://$Address/api/health" -TimeoutSec 3
-        return ($health.service -ceq 'table-card' -and $health.protocol -eq 2 -and $health.rulesVersion -ceq '2026.10.07-review')
+        return ($health.service -ceq 'table-card' -and $health.protocol -eq 2 -and $health.rulesVersion -ceq '2026.10.10-social-pokemon')
     } catch { return $false }
 }
 
@@ -56,18 +56,12 @@ function Show-ConnectionAddresses([string]$LocalAddress, [int]$ListenPort) {
     Write-Host ''
     Write-Host '========== 玩家连接地址 ==========' -ForegroundColor Green
     $lines = @('牌桌服务端 · 玩家连接地址')
-    if ($info.local) {
-        Write-Host "仅房主本机使用：$($info.local)"
-        $lines += "仅房主本机使用：$($info.local)"
-    }
     if (@($info.addresses).Count -gt 0) {
         Write-Host '同一局域网的玩家，在 join-table-card.bat 输入下方 IP:端口：'
         $lines += '同一局域网玩家输入以下地址：'
-        foreach ($entry in $info.addresses) {
-            Write-Host "  $($entry.address)  [$($entry.interface)]" -ForegroundColor Cyan
-            $lines += "$($entry.address)  [$($entry.interface)]"
-        }
-        Write-Host '多个地址时，选择与玩家同一网络的 Wi-Fi / 以太网地址。'
+        $entry = @($info.addresses)[0]
+        Write-Host "  $($entry.address)  [$($entry.interface)]" -ForegroundColor Cyan
+        $lines += "$($entry.address)  [$($entry.interface)]"
     } else {
         Write-Host '没有可分享的局域网地址；请检查网络连接和监听范围。' -ForegroundColor Yellow
         $lines += '没有可分享的局域网地址。'
@@ -81,6 +75,8 @@ function Show-ConnectionAddresses([string]$LocalAddress, [int]$ListenPort) {
     Write-Host '连接后再用房间号加入；网络及防火墙需允许对应端口。'
     Write-Host '==================================' -ForegroundColor Green
     Write-Host ''
+    if (@($info.addresses).Count -gt 0) { return @($info.addresses)[0].address }
+    return ''
 }
 
 function Get-Binaries {
@@ -159,7 +155,7 @@ try {
     $clientPath = Join-Path $programDir 'table-card.exe'
     $serverPath = Join-Path $programDir 'table-card-server.exe'
     if ($remote) {
-        if (-not (Test-CompatibleServer $address)) { throw "无法连接兼容的牌桌服务：$address。请房主使用本次维护版服务端（规则版本2026.10.07-review）并重新启动。" }
+        if (-not (Test-CompatibleServer $address)) { throw "无法连接兼容的牌桌服务：$address。请房主使用本次维护版服务端（规则版本2026.10.10-social-pokemon）并重新启动。" }
     } elseif (Test-CompatibleServer $address) {
         Write-Host "已发现本地牌桌服务（$Port），客户端将直接连接。"
     } else {
@@ -181,9 +177,11 @@ try {
         if (-not (Test-CompatibleServer $address)) { throw "服务启动超时。请查看 $errorPath；可运行 scripts/stop-local-server.ps1 -Port $Port 停止本次服务。" }
     }
 
-    if (-not $remote) { Show-ConnectionAddresses $address $Port }
+    $displayAddress = $address
+    if (-not $remote) { $displayAddress = Show-ConnectionAddresses $address $Port }
     if (-not $ServerOnly) {
-        Write-Host "正在打开 $Clients 个终端窗口，服务器：$address"
+        if ($displayAddress) { Write-Host "正在打开 $Clients 个终端窗口，玩家连接地址：$displayAddress" }
+        else { Write-Host "正在打开 $Clients 个本地终端窗口；当前未发现可分享的网卡地址。" }
         for ($index = 1; $index -le $Clients; $index++) {
             $launchPath = $clientPath
             Start-Process -FilePath $clientPath -ArgumentList @('-server', $address, '-name', "玩家$index") -WorkingDirectory $projectRoot -WindowStyle Normal | Out-Null

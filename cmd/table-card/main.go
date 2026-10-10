@@ -22,9 +22,9 @@ func main() {
 
 	var model *app.Model
 	if *soloPokemon {
-		model = app.NewPokemon(*name)
+		model = app.NewPokemonWithServer(*server, *name)
 	} else if *soloSnake {
-		model = app.NewSnake(*name)
+		model = app.NewSnakeWithServer(*server, *name)
 	} else {
 		model = app.New(*server, *name)
 	}

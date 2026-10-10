@@ -64,58 +64,75 @@ type actionSent struct{ err error }
 type chatSent struct{ err error }
 
 type Model struct {
-	pokemonGame                *pokemon.Game
-	pokemonInput               textinput.Model
-	pokemonGeneration          uint64
-	pokemonLogOffset           int
-	pokemonLoadError           bool
-	pokemonCache               pokemonRenderCache
-	pokemonNav                 pokemonNavigationCache
-	pokemonPanel               string
-	pokemonTarget              int
-	pokemonOptionPage          int
-	pokemonInfoOffset          int
-	pokemonHistory             []pokemonMenuLocation
-	snakeGame                  *snake.Game
-	snakeGeneration, snakeStep uint64
-	snakeStarted, snakePaused  bool
-	snakeBest                  int
-	sound                      *audio.Player
-	menuOn                     bool
-	overlay                    string
-	overlayOffset              int
-	overlayLast                string
-	optionsOn                  bool
-	optionIndex                int
-	settings                   map[table.Mode]map[string]any
-	pending                    bool
-	connectionClient           *netclient.Client
-	connectionCancel           context.CancelFunc
-	connectionCanceled         bool
-	reconnecting               bool
-	pauseUntil                 int64
-	clockActive                bool
-	address                    string
-	api                        *netclient.Client
-	page                       screen
-	modes                      []modeInfo
-	mode                       int
-	seats                      int
-	bots                       bool
-	name                       textinput.Model
-	code                       textinput.Model
-	editing                    string
-	room                       table.Snapshot
-	player                     table.Player
-	game                       json.RawMessage
-	control                    modeui.Controller
-	width                      int
-	height                     int
-	status                     string
-	chat                       textinput.Model
-	chatOn                     bool
-	quickChat                  bool
-	chatLog                    []string
+	social                                   *netclient.Client
+	socialReady, socialConnecting            bool
+	socialName                               string
+	socialMode                               table.Mode
+	socialUsers                              []netclient.OnlineUser
+	socialCursor                             int
+	socialPanel                              bool
+	socialAddress                            string
+	chatScope, chatTarget, chatTargetName    string
+	pokemonRoster                            []pokemonOnlinePlayer
+	pokemonOffer                             *pokemonInvite
+	pokemonDuel                              *pokemon.DuelView
+	pokemonDuelExit, pokemonRecover          bool
+	pokemonSocialReady, pokemonSocialPending bool
+	pokemonSocialTarget                      string
+	pokemonTradeSlots                        [2]int
+	pokemonGame                              *pokemon.Game
+	pokemonInput                             textinput.Model
+	pokemonGeneration                        uint64
+	pokemonLogOffset                         int
+	pokemonLoadError                         bool
+	pokemonCache                             pokemonRenderCache
+	pokemonNav                               pokemonNavigationCache
+	pokemonPanel                             string
+	pokemonTarget                            int
+	pokemonOptionPage                        int
+	pokemonInfoOffset                        int
+	pokemonHistory                           []pokemonMenuLocation
+	snakeGame                                *snake.Game
+	snakeGeneration, snakeStep               uint64
+	snakeStarted, snakePaused                bool
+	snakeBest                                int
+	sound                                    *audio.Player
+	menuOn                                   bool
+	overlay                                  string
+	overlayOffset                            int
+	overlayLast                              string
+	optionsOn                                bool
+	optionIndex                              int
+	settings                                 map[table.Mode]map[string]any
+	pending                                  bool
+	connectionClient                         *netclient.Client
+	connectionCancel                         context.CancelFunc
+	connectionCanceled                       bool
+	reconnecting                             bool
+	pauseUntil                               int64
+	clockActive                              bool
+	address                                  string
+	api                                      *netclient.Client
+	page                                     screen
+	modes                                    []modeInfo
+	mode                                     int
+	seats                                    int
+	bots                                     bool
+	name                                     textinput.Model
+	code                                     textinput.Model
+	editing                                  string
+	room                                     table.Snapshot
+	player                                   table.Player
+	game                                     json.RawMessage
+	control                                  modeui.Controller
+	width                                    int
+	height                                   int
+	status                                   string
+	chat                                     textinput.Model
+	chatOn                                   bool
+	quickChat                                bool
+	chatLog                                  []string
+	rendering                                bool
 }
 
 func New(address, playerName string) *Model {
@@ -143,16 +160,26 @@ func New(address, playerName string) *Model {
 
 func (m *Model) Init() tea.Cmd {
 	if m.page == pokemonScreen {
-		return tea.Batch(m.pokemonInput.Focus(), m.pokemonTimer())
+		return tea.Batch(m.pokemonInput.Focus(), m.pokemonTimer(), loadModes(m.address))
 	}
 	if m.page == snakeScreen {
-		return nil
+		return loadModes(m.address)
 	}
 	return loadModes(m.address)
 }
 
 func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := message.(type) {
+	case socialConnected:
+		return m, m.socialConnected(msg)
+	case socialReceived:
+		return m, m.socialReceived(msg)
+	case socialRetry:
+		if msg.client != m.social || m.socialReady {
+			return m, nil
+		}
+		m.socialConnecting = false
+		return m, m.connectSocial()
 	case pokemonTickMsg:
 		return m, m.pokemonTick(msg)
 	case snakeTickMsg:
@@ -184,7 +211,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "已恢复房间连接"
 		return m, readSocket(m.api)
 	case tea.MouseClickMsg:
-		if m.page == gameScreen && !m.chatOn && !m.quickChat && m.overlay == "" && msg.Button == tea.MouseLeft {
+		if m.page == gameScreen && !m.chatOn && !m.quickChat && !m.socialPanel && m.overlay == "" && msg.Button == tea.MouseLeft {
 			if control, ok := m.control.(interface {
 				Mouse(modeui.Snapshot, int, int) modeui.Result
 			}); ok {
@@ -223,7 +250,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "已连接 · 可创建房间或输入房间号加入"
 			}
 		}
-		return m, nil
+		return m, m.connectSocial()
 	case connected:
 		if msg.client != m.connectionClient {
 			return m, nil
@@ -254,13 +281,12 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.page = roomScreen
 		m.game = nil
 		m.control = nil
-		m.chatLog = nil
 		m.status = "实时连接成功"
 		m.reconnecting = false
 		if err := m.sound.SetMode(m.room.Mode); err != nil {
 			m.status = "声音加载失败：" + err.Error()
 		}
-		return m, readSocket(msg.client)
+		return m, tea.Batch(readSocket(msg.client), m.publishSocialMode())
 	case roomUpdated:
 		if msg.client != m.api {
 			return m, nil
@@ -286,7 +312,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.clockActive = true
 			return m, tea.Batch(readSocket(msg.client), clockTick())
 		}
-		return m, readSocket(msg.client)
+		return m, tea.Batch(readSocket(msg.client), m.publishSocialMode())
 	case actionSent:
 		if msg.err != nil {
 			m.status = "操作未送达：" + msg.err.Error()
@@ -294,11 +320,13 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case chatSent:
 		if msg.err != nil {
+			m.pokemonSocialPending = false
 			m.status = "聊天发送失败：" + msg.err.Error()
 		}
 		return m, nil
 	case tea.KeyPressMsg:
-		return m, m.key(msg)
+		cmd := m.key(msg)
+		return m, tea.Batch(cmd, m.publishSocialMode())
 	}
 	if m.page == pokemonScreen {
 		var cmd tea.Cmd
@@ -336,14 +364,7 @@ func (m *Model) applyEnvelope(envelope netclient.Envelope) {
 			m.page = gameScreen
 		}
 	case "chat":
-		prefix := envelope.Name
-		if envelope.PlayerID == m.player.ID {
-			prefix = "我"
-		}
-		m.chatLog = append(m.chatLog, prefix+"："+envelope.Text)
-		if len(m.chatLog) > 5 {
-			m.chatLog = m.chatLog[len(m.chatLog)-5:]
-		}
+		m.appendChat(envelope)
 	case "error":
 		m.status = envelope.Error
 	}
@@ -376,6 +397,9 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 		}
 		return tea.Sequence(m.leave(), tea.Quit)
 	}
+	if handled, cmd := m.socialKey(message); handled {
+		return cmd
+	}
 	if m.connectionCancel != nil && (key == "esc" || key == "delete") {
 		m.connectionCanceled = true
 		m.connectionCancel()
@@ -405,7 +429,7 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 			if joinAfter {
 				return m.join()
 			}
-			return nil
+			return m.connectSocial()
 		}
 		var cmd tea.Cmd
 		if m.editing == "name" {
@@ -418,7 +442,7 @@ func (m *Model) key(message tea.KeyMsg) tea.Cmd {
 	if m.quickChat {
 		return m.quickChatKey(key)
 	}
-	if key == "f3" && (m.page == roomScreen || m.page == gameScreen) && m.overlay == "" && !m.optionsOn {
+	if key == "f3" && m.socialReady && m.overlay == "" && !m.optionsOn {
 		m.quickChat = true
 		return nil
 	}
@@ -620,7 +644,14 @@ func (m *Model) gameKey(key string) tea.Cmd {
 }
 
 func (m *Model) controllerSnapshot() modeui.Snapshot {
-	return modeui.Snapshot{Mode: m.room.Mode, Room: m.room, PlayerID: m.player.ID, Game: m.game, Width: m.width, Height: m.height}
+	width, height := m.width, m.height
+	if !m.rendering {
+		if width >= 120 {
+			width -= 31
+		}
+		height = max(12, height-m.socialChatRows())
+	}
+	return modeui.Snapshot{Mode: m.room.Mode, Room: m.room, PlayerID: m.player.ID, Game: m.game, Width: width, Height: height}
 }
 
 func (m *Model) create() tea.Cmd {
@@ -758,6 +789,15 @@ func (m *Model) setSeats(value int) {
 }
 
 func (m *Model) View() tea.View {
+	m.rendering = true
+	fullWidth, fullHeight := m.width, m.height
+	sideWidth := 0
+	if fullWidth >= 120 {
+		sideWidth = 29
+		m.width -= sideWidth + 2
+	}
+	chatRows := m.socialChatRows()
+	m.height = max(12, m.height-chatRows)
 	var content string
 	switch m.page {
 	case pokemonScreen:
@@ -778,6 +818,15 @@ func (m *Model) View() tea.View {
 	} else if m.overlay != "" {
 		content = m.overlayView()
 	}
+	mainWidth := m.width
+	m.width, m.height = fullWidth, fullHeight
+	m.rendering = false
+	if m.socialPanel {
+		content = m.socialPanelView()
+	} else if sideWidth > 0 {
+		content = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(mainWidth).Render(content), " │ ", m.socialSidebar(sideWidth, max(8, fullHeight-chatRows)))
+	}
+	content += "\n" + m.socialChatView(fullWidth)
 	v := tea.NewView(strings.ReplaceAll(content, "\x00", ""))
 	v.AltScreen = true
 	v.WindowTitle = "牌桌 Card Table"
@@ -840,6 +889,9 @@ func (m *Model) roomView() string {
 	}
 	title := titleStyle.Render("牌桌  /  " + modeName)
 	meta := fmt.Sprintf("房间 %s   %d / %d 人", m.room.Code, len(m.room.Players), m.room.Seats)
+	if m.socialAddress != "" {
+		meta += "   玩家连接 " + m.socialAddress
+	}
 	var players []string
 	for i, p := range m.room.Players {
 		state := "等待准备"
@@ -860,11 +912,6 @@ func (m *Model) roomView() string {
 	body := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#426A58")).Padding(1, 3).Width(58).Render(strings.Join(players, "\n"))
 	controls := "R 准备 · S 开始 · / 英文聊天 · F3 编号短语 · Esc 返回"
 	chat := ""
-	if m.chatOn {
-		chat = "\n" + m.chat.View() + "\n" + muted.Render("Enter 发送 · F3 编号短语 · Esc 关闭聊天")
-	} else if len(m.chatLog) > 0 {
-		chat = "\n" + muted.Render(strings.Join(m.chatLog, "\n"))
-	}
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, lipgloss.JoinVertical(lipgloss.Center, title, muted.Render(meta), "", body, "", statusStyle.Render(m.status), muted.Render(controls), chat))
 }
 
@@ -876,20 +923,10 @@ func (m *Model) gameView() string {
 	header := titleStyle.Render(fmt.Sprintf("牌桌  /  %s  /  房间 %s", m.room.Mode, m.room.Code))
 	help := muted.Render("/ 英文聊天 · F3 短语 · Esc 取消 · Del 离桌 · F1 规则 · F2 再玩 · M 声音")
 	chat := ""
-	if m.chatOn {
-		chat = "\n" + m.chat.View() + "\n" + muted.Render("Enter 发送 · Esc 关闭聊天")
-	} else if len(m.chatLog) > 0 {
-		chat = "\n" + muted.Render(strings.Join(m.chatLog, "\n"))
-	}
 	status := m.status
 	if m.room.Mode == table.TetrisMode {
 		// Use the available rows for the board. Chat shares the status row rather
 		// than pushing the controls below a typical 30-row terminal window.
-		if m.chatOn {
-			status = m.chat.View() + " · Enter 发送 / Esc 返回操作"
-		} else if len(m.chatLog) > 0 {
-			status = m.chatLog[len(m.chatLog)-1]
-		}
 		return modeui.JoinLeft(header, "", view, statusStyle.Render(status), help)
 	}
 	if remaining := m.pauseUntil - time.Now().Unix(); remaining > 0 {

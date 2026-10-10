@@ -15,16 +15,19 @@ type Monster struct {
 	Sleep                   int
 	Moves, PP               [4]int
 	Signature               bool
+	Combat                  CombatState
 }
 
 func (m Monster) Name() string      { return Dex[m.Species].Name }
 func (m Monster) MaxHP() int        { return ((Dex[m.Species].HP+8)*2*m.Level)/100 + m.Level + 10 }
 func (m Monster) stat(base int) int { return ((base+8)*2*m.Level)/100 + 5 }
 func newMonster(id, level int) Monster {
-	m := Monster{Species: id, Level: level, Exp: ExperienceAtLevel(level), Moves: moveSet(id, level)}
+	m := Monster{Species: id, Level: level, Exp: ExperienceForSpecies(id, level), Moves: moveSet(id, level)}
 	m.HP = m.MaxHP()
 	for i, n := range m.Moves {
-		m.PP[i] = Moves[n].PP
+		if n >= 0 {
+			m.PP[i] = Moves[n].PP
+		}
 	}
 	return m
 }
@@ -42,6 +45,8 @@ type Capture struct {
 	Step        int
 }
 type State struct {
+	MultiplayerRevision          uint64
+	MultiplayerServer            string
 	Version                      int
 	Name                         string
 	Area, Unlocked, Money, Elite int
@@ -64,7 +69,7 @@ type Game struct {
 }
 
 func New(name string) *Game {
-	g := &Game{State: State{Version: 2, Name: name, Money: 4000, Items: map[string]int{"精灵球": 10, "伤药": 5}, TrainerWins: make([]int, len(Areas)), Flags: map[string]bool{}, Seen: map[int]bool{}, Caught: map[int]bool{}}, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
+	g := &Game{State: State{Version: 3, Name: name, Money: 4000, Items: map[string]int{"精灵球": 10, "伤药": 5}, TrainerWins: make([]int, len(Areas)), Flags: map[string]bool{}, Seen: map[int]bool{}, Caught: map[int]bool{}}, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
 	g.say("欢迎来到真新镇，%s。大木博士已经准备好三位初始伙伴。", name)
 	g.say("用数字菜单领取伙伴，或输入 starter 1 / starter 2 / starter 3。")
 	g.say("这是重新编写的关都文字冒险；真新镇与沿途章节各有6名独立挑战者。")
@@ -208,14 +213,12 @@ func (g *Game) Command(input string) error {
 		if !g.Ready() {
 			return errors.New("队伍全部失去战斗能力，请先治疗")
 		}
-		a := Areas[g.Area]
-		id := a.Wild[g.rng.Intn(len(a.Wild))]
-		if g.Completed && g.Area == 11 && g.rng.Intn(4) == 0 {
-			id = 1 + g.rng.Intn(151)
+		if g.Area == 4 && !g.Flags["scope"] {
+			return errors.New("宝可梦塔的幽灵尚无法辨认，请先在玉虹市取得西尔佛检视镜")
 		}
-		level := a.MinLevel + g.rng.Intn(a.MaxLevel-a.MinLevel+1)
+		id, level := g.wildEncounter()
 		g.startBattle("wild", "野生遭遇", []Monster{newMonster(id, level)}, "", 0)
-		g.say("草叶晃动！野生%s Lv%d出现。", Dex[id].Name, level)
+		g.say("%s：野生%s Lv%d出现！", EncounterLocation(g.Area), Dex[id].Name, level)
 	case "挑战", "challenge":
 		if g.Area >= 11 {
 			return errors.New("冠军后篇没有强制挑战者，可以探索草丛和传说遭遇")
@@ -298,20 +301,56 @@ func (g *Game) startBattle(kind, name string, foes []Monster, flag string, chall
 	if active < 0 {
 		return errors.New("队伍全部失去战斗能力，请先治疗")
 	}
+	// Shortcut actions travel to their scene, just as numbered map visits do.
+	// This keeps the persistent YOU location accurate when starting from town.
+	switch kind {
+	case "wild":
+		g.Location = 1
+		if name == "传说遭遇" {
+			g.Location = 4
+		}
+	case "trainer":
+		g.Location = 2
+	case "gym", "league":
+		g.Location = 4
+	case "event":
+		g.Location = 3
+	}
 	g.Battle = &Battle{Kind: kind, Name: name, Foes: foes, Active: active, Area: g.Area, Flag: flag, Challenge: challenge}
 	for _, foe := range foes {
 		g.Seen[foe.Species] = true
+	}
+	if kind != "wild" {
+		title := "训练家"
+		switch kind {
+		case "gym":
+			title = "道馆馆主"
+		case "league":
+			title = "联盟挑战者"
+		case "event":
+			title = "剧情对手"
+		}
+		g.say("【对战开始】%s %s 向你发起了挑战！", title, name)
+		if len(foes) > 0 {
+			g.say("%s 派出了 %s Lv%d！对手队伍共 %d 只。", name, foes[0].Name(), foes[0].Level, len(foes))
+		}
+		g.say("上吧，%s！选择招式，迎接这场对战。", g.Party[active].Name())
 	}
 	return nil
 }
 func (g *Game) heal() {
 	for i := range g.Party {
 		m := &g.Party[i]
+		ResetCombat(m)
 		m.HP = m.MaxHP()
 		m.Status = ""
 		m.Sleep = 0
 		for j, id := range m.Moves {
-			m.PP[j] = Moves[id].PP
+			if id < 0 {
+				m.PP[j] = 0
+			} else {
+				m.PP[j] = Moves[id].PP
+			}
 		}
 	}
 }
@@ -321,8 +360,12 @@ func (g *Game) partyInfo() {
 		g.say("%s", m.ExperienceSummary())
 		g.say("%s", m.EvolutionSummary())
 		for j, id := range m.Moves {
+			if id < 0 || id >= len(Moves) {
+				g.say("  招式槽%d：未学习", j+1)
+				continue
+			}
 			move := Moves[id]
-			g.say("  招式%d %s [%s] PP %d/%d", j+1, move.Name, TypeNames[move.Type], m.PP[j], move.PP)
+			g.say("  招式%d %s [%s] PP %d/%d\n%s", j+1, move.Name, TypeNames[move.Type], m.PP[j], move.PP, MoveDescription(id))
 		}
 	}
 }

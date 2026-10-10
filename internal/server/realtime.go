@@ -117,10 +117,19 @@ func (p *socketPeer) send(value any) error {
 func (p *socketPeer) writeLoop() {
 	defer p.cancel()
 	defer p.conn.CloseNow()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
 	for {
 		select {
 		case <-p.ctx.Done():
 			return
+		case <-heartbeat.C:
+			ctx, cancel := context.WithTimeout(p.ctx, 3*time.Second)
+			err := p.conn.Ping(ctx)
+			cancel()
+			if err != nil {
+				return
+			}
 		case payload := <-p.out:
 			ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
 			err := p.conn.Write(ctx, websocket.MessageText, payload)
@@ -168,9 +177,13 @@ func (s *Server) roomWebSocket(w http.ResponseWriter, r *http.Request) {
 		cancel()
 		s.hub.remove(peer)
 		_ = conn.CloseNow()
+		s.opMu.Lock()
+		s.broadcastPresenceLocked()
+		s.opMu.Unlock()
 	}()
 	s.opMu.Lock()
 	s.sendRoomState(peer, room)
+	s.broadcastPresenceLocked()
 	s.opMu.Unlock()
 
 	for {
@@ -206,6 +219,11 @@ func (s *Server) handleSocketMessage(peer *socketPeer, room *table.Room, request
 		s.hub.broadcast(peer.roomCode, map[string]any{
 			"type": "chat", "playerId": peer.playerID, "name": peer.name, "text": text,
 		})
+		for _, player := range room.Snapshot().Players {
+			if !player.Bot {
+				s.sendToSocial(player.ID, map[string]any{"type": "chat", "scope": "room", "roomCode": peer.roomCode, "playerId": peer.playerID, "name": peer.name, "text": text})
+			}
+		}
 	case "action":
 		s.opMu.Lock()
 		defer s.opMu.Unlock()
@@ -244,10 +262,12 @@ func (s *Server) broadcastRoom(room *table.Room) {
 	for _, peer := range s.hub.roomPeers(room.Snapshot().Code) {
 		s.sendRoomState(peer, room)
 	}
+	s.broadcastPresenceLocked()
 }
 
 func (s *Server) broadcastGameState(roomCode string, room *table.Room, engine games.Engine) {
 	for _, peer := range s.hub.roomPeers(roomCode) {
 		_ = peer.send(s.stateEnvelope(room, engine, peer.playerID))
 	}
+	s.broadcastPresenceLocked()
 }

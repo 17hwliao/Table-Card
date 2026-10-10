@@ -1,5 +1,5 @@
 ﻿[CmdletBinding()]
-param([ValidateSet('snake', 'pokemon')][string]$Mode = 'snake', [string]$Name = '玩家 1')
+param([ValidateSet('snake', 'pokemon')][string]$Mode = 'snake', [string]$Name = '玩家 1', [string]$Server = 'localhost:1781')
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $binaryRoot = Join-Path $projectRoot 'bin'
@@ -34,7 +34,7 @@ try {
         if ($needsBuild -and $hasSource) { throw '源码已更新但无法编译；请安装 Go 或使用最新便携包。' }
         $clientPath = $clientBinary.FullName
     }
-    & $clientPath "-$Mode" -name $Name
+    & $clientPath "-$Mode" -name $Name -server $Server
     if ($LASTEXITCODE -ne 0) { throw '单机客户端已异常退出。' }
 } catch {
     Write-Host "启动失败：$($_.Exception.Message)" -ForegroundColor Red

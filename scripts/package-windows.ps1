@@ -50,7 +50,7 @@ foreach ($stage in @($hostStage, $clientStage)) {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/terminal-controls.md') -Destination (Join-Path $stage '终端全部操作.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/pokemon-text-adventure.md') -Destination (Join-Path $stage '宝可梦指令与规则.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/memory-and-test-report.md') -Destination (Join-Path $stage 'memory-and-test-report.md')
-    foreach ($guide in @('terminal-controls.md', 'pokemon-text-adventure.md', 'game-audio.md', 'full-review-2026-10-07.md')) {
+    foreach ($guide in @('terminal-controls.md', 'pokemon-text-adventure.md', 'mode-migration-status.md', 'game-audio.md', 'full-review-2026-10-07.md')) {
         Copy-Item -LiteralPath (Join-Path $projectRoot "docs/$guide") -Destination (Join-Path $stage $guide)
     }
 }
@@ -71,7 +71,10 @@ $hostInstructions = @'
 6. 公网游玩需要玩家能访问房主的网络和 TCP 端口；本项目没有云端中继。
 7. 单机贪吃蛇双击 start-snake.bat，无需启动服务端或输入网络地址。
 8. 只开启服务端可双击 start-server.bat，窗口会保留连接地址；地址同时保存在 runtime/server-1781-addresses.txt。
-9. 宝可梦文字冒险双击 start-pokemon.bat，纯单机离线，进度按昵称保存；全程数字菜单，详细选项见“宝可梦指令与规则.md”。
+9. 宝可梦文字冒险双击 start-pokemon.bat，本地冒险可离线，进度按昵称保存；联机双击 start-table-card.bat 后大厅按 P，或执行 .\start-pokemon.ps1 -Name Alice -Server 192.168.1.20:1781。
+10. 在线玩家侧栏至少120列显示；F4打开紧凑选择器，方向键选人，Enter选私聊对象。F6全服 / F7房间 / F8私聊，/输入，Enter发送，Esc返回；输入时消息仍实时显示，F3编号中文短语。
+11. 宝可梦L+Enter进入联机中心，双方同步后按编号选择玩家，对战或交换都要双方确认。双方须使用不同昵称、每个身份只开一个窗口；对战胜者净得300金币、败者净失300，平局退还，Del/断线认输。
+12. 详细联网操作及版本范围见“终端全部操作.md”、“宝可梦指令与规则.md”和 mode-migration-status.md；不要把回环地址发给其他电脑。更新后先停止旧服务再启动新版服务端。
 
 使用者无需安装 Go、Docker 或 Redis。
 若启动提示“操作已被用户取消”(1223)，核对 GitHub 发布来源和 ZIP 的 SHA-256 后，可双击 repair-startup.bat，输入 1 仅解除当前包 EXE 的下载锁定，再运行原启动脚本。
@@ -87,7 +90,10 @@ $clientInstructions = @'
 4. 默认端口是 1781；只输入 IP 时会自动补上该端口。
 5. 如果连接失败，确认房主正在运行服务、地址正确，且网络或防火墙允许连接。
 6. 离线玩贪吃蛇可直接双击 start-snake.bat，无需房主、网络或服务器。
-7. 离线宝可梦文字冒险双击 start-pokemon.bat；全部行动支持数字菜单和英文字母，M地图 / C中心 / H指南（字母后按Enter），自动本地存档。
+7. 本地宝可梦冒险双击 start-pokemon.bat，可离线；联机请先用 join-table-card.bat 连接房主再在大厅按 P，或执行 .\start-pokemon.ps1 -Name Alice -Server 房主IP:端口。
+8. F4选在线玩家，方向键选人、Enter选私聊对象；F6全服 / F7房间 / F8私聊，/输入、Enter发送、Esc返回，输入时记录继续更新；F3编号中文短语可跨模式使用。
+9. 宝可梦M地图 / C中心 / H指南 / L联机（字母后按Enter）。双方在L中心同步后选择玩家、对战或交换提案，由对方接受。玩家对战1–4+Enter选招，S 1–6+Enter换人，Del/断线认输；胜者净得300金币、败者净失300，平局退还。
+10. 双方使用不同昵称，每个身份只开一个窗口；全程数字和英文字母操作，无需输入中文。详细连接、消息范围、经验/地图/招式、邀请超时和交换规则见“终端全部操作.md”和“宝可梦指令与规则.md”。
 
 玩家无需安装 Go、Docker、Redis 或其他运行环境。
 若启动提示“操作已被用户取消”(1223)，核对 GitHub 发布来源和 ZIP 的 SHA-256 后，可双击 repair-startup.bat，输入 1 仅解除当前包 EXE 的下载锁定，再运行原启动脚本。

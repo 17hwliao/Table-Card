@@ -25,7 +25,16 @@ type pokemonRenderCache struct {
 }
 
 func NewPokemon(name string) *Model { m := New("", name); m.startPokemon(); return m }
+func NewPokemonWithServer(address, name string) *Model {
+	m := New(address, name)
+	m.startPokemon()
+	return m
+}
 func (m *Model) startPokemon() tea.Cmd {
+	m.pokemonSocialReady, m.pokemonSocialPending, m.pokemonRecover, m.pokemonDuelExit = false, false, false, false
+	m.pokemonOffer = nil
+	m.pokemonDuel = nil
+	m.pokemonRoster = nil
 	m.pokemonCache = pokemonRenderCache{}
 	m.pokemonNav = pokemonNavigationCache{}
 	m.pokemonHistory = nil
@@ -104,6 +113,9 @@ func (m *Model) pokemonTick(msg pokemonTickMsg) tea.Cmd {
 }
 func (m *Model) pokemonKey(message tea.KeyMsg) tea.Cmd {
 	key := message.String()
+	if m.pokemonDuel != nil {
+		return m.pokemonDuelKey(message)
+	}
 	if pressed, ok := message.(tea.KeyPressMsg); ok && pressed.IsRepeat && (key == "enter" || key == "delete" || key == "f9" || key == "f5" || key == "ctrl+s") {
 		return nil
 	}
@@ -113,6 +125,10 @@ func (m *Model) pokemonKey(message tea.KeyMsg) tea.Cmd {
 	}
 	switch key {
 	case "delete":
+		if m.pokemonOffer != nil || m.pokemonSocialPending {
+			m.status = "正在取消联机邀请；收到取消回执后可Del返回"
+			return m.socialSend(map[string]any{"type": "pokemon_cancel"})
+		}
 		if !m.savePokemon() {
 			return nil
 		}
@@ -211,7 +227,7 @@ func (m *Model) pokemonMenuKey(key string) tea.Cmd {
 	return nil
 }
 func (m *Model) pokemonLobbyView() string {
-	body := titleStyle.Render("宝可梦 / 关都文字冒险") + "\n\n" + muted.Render("本地单机 · 151种图鉴 · 八徽章与联盟 · 按昵称存档") + "\n\n1. 继续冒险 / 首次开始\n2. 指令与规则\n3. 返回游戏选择\n\n玩家：" + m.name.Value()
+	body := titleStyle.Render("宝可梦 / 关都文字冒险") + "\n\n" + muted.Render("单机冒险 + 联机对战/交换 · 151种图鉴 · 按昵称存档") + "\n\n1. 继续冒险 / 首次开始\n2. 指令与规则\n3. 返回游戏选择\n\n玩家：" + m.name.Value()
 	if m.editing == "name" {
 		body += "\n" + m.name.View()
 	}

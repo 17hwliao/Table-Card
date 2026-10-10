@@ -16,16 +16,20 @@ import (
 )
 
 type Client struct {
-	closed   bool
-	playerID string
-	token    string
-	baseURL  string
-	http     *http.Client
-	stateMu  sync.RWMutex
-	socket   *websocket.Conn
-	ctx      context.Context
-	cancel   context.CancelFunc
-	writeMu  sync.Mutex
+	closed        bool
+	playerID      string
+	token         string
+	baseURL       string
+	http          *http.Client
+	stateMu       sync.RWMutex
+	socket        *websocket.Conn
+	ctx           context.Context
+	cancel        context.CancelFunc
+	writeMu       sync.Mutex
+	socialSocket  *websocket.Conn
+	socialCtx     context.Context
+	socialCancel  context.CancelFunc
+	socialWriteMu sync.Mutex
 }
 
 func (c *Client) Identity(id, token string) { c.playerID = id; c.token = token }
@@ -65,6 +69,9 @@ type Envelope struct {
 	Name       string          `json:"name"`
 	PlayerID   string          `json:"playerId"`
 	Error      string          `json:"error"`
+	Scope      string          `json:"scope"`
+	TargetID   string          `json:"targetId"`
+	RoomCode   string          `json:"roomCode"`
 }
 
 func New(address string) *Client {

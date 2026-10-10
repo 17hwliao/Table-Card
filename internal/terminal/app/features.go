@@ -114,6 +114,9 @@ func (m *Model) syncMusicMode() {
 	}
 }
 func (m *Model) Close() {
+	if m.social != nil {
+		m.social.SocialClose()
+	}
 	if m.connectionCancel != nil {
 		m.connectionCancel()
 	}
@@ -138,7 +141,6 @@ func (m *Model) leave() tea.Cmd {
 	m.room = table.Snapshot{}
 	m.game = nil
 	m.control = nil
-	m.chatLog = nil
 	m.chat.SetValue("")
 	m.chatOn = false
 	m.quickChat = false
