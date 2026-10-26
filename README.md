@@ -19,9 +19,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/17hwliao/Table-Card/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/17hwliao/Table-Card?color=72e5b2&amp;label=release"></a>
-  <a href="go.mod"><img alt="Go 1.26 or later" src="https://img.shields.io/badge/Go-1.26%2B-72e5b2"></a>
-  <a href="LICENSE"><img alt="License: GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-72e5b2"></a>
+  <a href="https://github.com/17hwliao/Table-Card/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/17hwliao/Table-Card?label=release&amp;style=flat&amp;color=72e5b2&amp;labelColor=555555" /></a>
+  <a href="go.mod"><img alt="Go 1.26.0 or later" src="https://img.shields.io/badge/Go-1.26.0%2B-72e5b2?style=flat&amp;color=72e5b2&amp;labelColor=555555" /></a>
+  <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-72e5b2?style=flat&amp;color=72e5b2&amp;labelColor=555555" /></a>
 </p>
 
 ---
