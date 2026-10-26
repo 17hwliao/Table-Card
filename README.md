@@ -24,17 +24,28 @@
   <a href="LICENSE"><img alt="License: GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-72e5b2"></a>
 </p>
 
+---
+
 TableCard is a collection of multiplayer tabletop games, survival games, and text adventures built around a full terminal interface. Choose a game, host a room, chat with friends, and play using your keyboard or mouse. A Go server validates multiplayer actions and synchronizes each player's view over WebSocket.
 
 **Interface language:** game screens, rules, and story text are currently primarily in Chinese. This README is in English. Required choices use numbers or ASCII letters; English nicknames and numbered chat phrases let you play without a Chinese input method. Use a terminal font that can display Chinese characters.
 
 ## Why TableCard?
 
+| Bring friends | Practice at your pace | Keep setup small |
+| :--- | :--- | :--- |
+| Shared rooms, online presence, and chat across games. | Rule-based bots, offline Snake, and a local text adventure. | Portable Windows host and player packages, with music included. |
+
+<details>
+<summary><strong>More about the terminal experience</strong></summary>
+
 - **A terminal from start to finish.** Game selection, rooms, boards, chat, and results share the same terminal interface.
 - **Play together or practice.** Ten networked modes, rule-based Sunjiajia bots, and two games with offline play.
 - **One server, many tables.** Friends can play different games while sharing online presence, server-wide messages, and private chat.
 - **Portable Windows downloads.** Separate player and host packages, with music embedded in the client. Players need no Go installation, Docker, Redis, or database.
 - **Room-aware controls.** Mouse input for boards and planting, keyboard hints, and an explicit terminal-size notice when the full game view cannot fit.
+
+</details>
 
 ## Download
 
@@ -83,6 +94,9 @@ The default port is **TCP 1781**. On the same LAN, use the address shown by the 
 
 The main game selector also offers Snake (`0`) and the text adventure (`P`) when a server is unavailable. Bot practice for the networked modes requires a running server.
 
+<details>
+<summary><strong>Advanced launcher options: local clients and custom servers</strong></summary>
+
 ### Open several local clients
 
 Run these commands in the **host package** or source checkout:
@@ -103,6 +117,8 @@ Run these commands in the **host package** or source checkout:
 
 The launcher checks server compatibility before connecting. In a source checkout it can build the Go executables when needed; portable packages contain prebuilt executables.
 
+</details>
+
 ## Games
 
 Press the listed key in the game selector. Networked modes provide room creation, matching, and bot practice.
@@ -122,17 +138,30 @@ Press the listed key in the game selector. Networked modes provide room creation
 | **Garden Relay** | `G` | 2 | Real-time 5×9 lawns, ten plants, nine zombie types, mouse planting, and defeated-enemy transfers |
 | **Pokémon text adventure** | `P` | 1; optional 2-player interactions | 151 species, Kanto-inspired progression, original side quests, catching, leveling, evolution, player battles, and trades |
 
+<details>
+<summary><strong>Tetris survival: timing, scoring, and controls</strong></summary>
+
 ### Tetris survival
 
 Every player has a 10×20 board and the same piece sequence. After the opening countdown, the shared level increases **every 20 seconds**, even if nobody clears a line. Gravity speeds up from **1,000 ms to 100 ms per cell**; the fixed lock window also shortens. The last surviving player wins. This is a survival mode without garbage-line attacks.
 
 Use `Left` / `Right` to move, `Up` / `Down` to rotate clockwise / counterclockwise, **`S` to soft-drop**, and `Space` to hard-drop. Opening chat or rules does not pause the match.
 
+</details>
+
+<details>
+<summary><strong>Garden Relay: the shared-lawn battle</strong></summary>
+
 ### Garden Relay
 
 Defend your own lawn and press `Tab` or `V` to inspect your opponent's live lawn. Every defeated zombie returns at the right edge of the opponent's **same row**, with full health and armor; this repeats on every defeat. There are no lawnmowers. Let a zombie reach the brain and you lose; simultaneous breaches are a draw.
 
 Click a plant card, then a cell on your lawn to plant it. Keyboard selection and the shovel are also supported. Combat continues while inspecting the other lawn, chatting, or reading rules. See the [Garden Relay guide](docs/garden-relay.md) for timings and controls.
+
+</details>
+
+<details>
+<summary><strong>Pokémon text adventure: progression and online play</strong></summary>
 
 ### Pokémon text adventure
 
@@ -145,6 +174,8 @@ Choose actions with numbers or English letters followed by `Enter`. The adventur
 - `F5`: save; `F9`: music; `Del`: save and return.
 
 For player battles, each participant needs at least 300 coins. The winner gains a net 300 coins and the loser loses 300; a draw refunds the stakes. Leaving or disconnecting counts as a forfeit. Use distinct nicknames and one window per identity. Details and data sources are in the [text adventure guide](docs/pokemon-text-adventure.md).
+
+</details>
 
 ## Controls and chat
 
