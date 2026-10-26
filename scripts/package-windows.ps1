@@ -56,6 +56,7 @@ foreach ($stage in @($hostStage, $clientStage)) {
 }
 $hostDocs = Join-Path $hostStage 'docs'
 New-Item -ItemType Directory -Path $hostDocs -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/branding') -Destination (Join-Path $hostDocs 'branding') -Recurse
 foreach ($name in @('mode-migration-status.md', 'pokemon-text-adventure.md', 'garden-relay.md', 'memory-and-test-report.md', 'terminal-controls.md', 'game-audio.md', 'full-review-2026-10-07.md', 'full-review-2026-10-13.md', 'full-review-2026-10-26.md', 'recovery-and-fixes-2026-10-26.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot "docs/$name") -Destination (Join-Path $hostDocs $name)
 }

@@ -1,179 +1,278 @@
-# 牌桌 Card Table
+<p align="center">
+  <img src="docs/branding/tablecard-logo.png" width="176" height="176" alt="TableCard logo: a terminal prompt combined with a playing card">
+</p>
 
-牌桌是以终端为完整交互界面的多人桌游项目。大厅、房间、聊天和游戏操作都在终端中完成；本地服务端负责房间、规则校验和实时同步。
+<h1 align="center">TableCard</h1>
 
-## 游戏模式
+<p align="center"><strong>Your terminal. Your game table.</strong></p>
 
-- 斗地主：三人对局，支持 Sunjiajia 机器人训练
-- 骗子酒馆：四人诈唬、质疑和淘汰，支持机器人补位
-- 四川麻将：四人血战到底、换三张、定缺、碰杠胡、计分和房规设置
-- 中国象棋、国际象棋、五子棋、围棋：终端棋盘支持鼠标点击与键盘操作，并可与机器人对弈
-- UNO：2–4 人，支持叠罚、跳打、7/0、+4 挑战、房规设置和累计积分
-- 俄罗斯方块：双人 / 四人实时生存对战，支持相同方块序列、自动下落、消行、触顶淘汰、观战和 Sunjiajia 人机练习
-- 草坪接力：植物大战僵尸双人终端对战，G进入；击败的僵尸满血转移到对方同一行，Tab/V查看对方草坪，没有小推车，脑子被吃即失败；支持人机练习，详见[规则与操作](docs/garden-relay.md)
-- 贪吃蛇：本地单机、离线可玩，支持吃食物增长、触墙/触身死亡、暂停、重开和逐级加速
-- 宝可梦文字冒险：离线冒险、151种图鉴、按第一世代红版数据采样的野外遇敌、三次摇球捕捉、关都八徽章与联盟主线；联网时还可玩家对战、交换伙伴，进度按昵称保存
+<p align="center">
+  Twelve games. Shared rooms and chat. One terminal.
+</p>
 
-游戏模式、音乐和规则相互隔离。按 `M` 开关音乐，按 `F1` 查看当前模式规则。
-宝可梦文字输入界面使用 `F9` 开关音乐，字母键用于正常输入指令。
+<p align="center">
+  <a href="https://github.com/17hwliao/Table-Card/releases/latest">Download</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#games">Games</a> ·
+  <a href="#build-from-source">Build from source</a> ·
+  <a href="#documentation">Documentation</a>
+</p>
 
-## Windows 启动
+<p align="center">
+  <a href="https://github.com/17hwliao/Table-Card/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/17hwliao/Table-Card?color=72e5b2&amp;label=release"></a>
+  <a href="go.mod"><img alt="Go 1.26 or later" src="https://img.shields.io/badge/Go-1.26%2B-72e5b2"></a>
+  <a href="LICENSE"><img alt="License: GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-72e5b2"></a>
+</p>
 
-2026-10-26已恢复此前未提交的草坪接力和鼠标种植，修复上轮审查问题。版本对齐及实际测试结果见[恢复与修复记录](docs/recovery-and-fixes-2026-10-26.md)。
+TableCard is a collection of multiplayer tabletop games, survival games, and text adventures built around a full terminal interface. Choose a game, host a room, chat with friends, and play using your keyboard or mouse. A Go server validates multiplayer actions and synchronizes each player's view over WebSocket.
 
-当前模块职责、调用图、四类新增问题的修复和验证边界见[全项目 Review 与框架梳理](docs/full-review-2026-10-26.md)。窗口容纳不下完整界面时显示所需尺寸，放大后恢复；不会把隐藏棋盘当作仍可点击的界面。
+**Interface language:** game screens, rules, and story text are currently primarily in Chinese. This README is in English. Required choices use numbers or ASCII letters; English nicknames and numbered chat phrases let you play without a Chinese input method. Use a terminal font that can display Chinese characters.
 
-双击 `start-table-card.bat`，或从 PowerShell 执行：
+## Why TableCard?
+
+- **A terminal from start to finish.** Game selection, rooms, boards, chat, and results share the same terminal interface.
+- **Play together or practice.** Ten networked modes, rule-based Sunjiajia bots, and two games with offline play.
+- **One server, many tables.** Friends can play different games while sharing online presence, server-wide messages, and private chat.
+- **Portable Windows downloads.** Separate player and host packages, with music embedded in the client. Players need no Go installation, Docker, Redis, or database.
+- **Room-aware controls.** Mouse input for boards and planting, keyboard hints, and an explicit terminal-size notice when the full game view cannot fit.
+
+## Download
+
+Download the ZIP for your role from [GitHub Releases](https://github.com/17hwliao/Table-Card/releases/latest). The current published version is **[v2026.10.26.1](https://github.com/17hwliao/Table-Card/releases/tag/v2026.10.26.1)**.
+
+| Package | Who needs it? | Current download |
+| --- | --- | --- |
+| **Player client** | Players joining somebody else's server; offline Snake and text adventure are included | [Windows x64 ZIP · 14.62 MiB](https://github.com/17hwliao/Table-Card/releases/download/v2026.10.26.1/Table-Card-Client-Windows-amd64-20261026-093328-31c7d8.zip) |
+| **Host / server** | The person running the server; also includes the player client | [Windows x64 ZIP · 17.68 MiB](https://github.com/17hwliao/Table-Card/releases/download/v2026.10.26.1/Table-Card-Host-Windows-amd64-20261026-093328-31c7d8.zip) |
+| **Checksums** | SHA-256 values for both ZIPs | [SHA256SUMS](https://github.com/17hwliao/Table-Card/releases/download/v2026.10.26.1/SHA256SUMS-v2026.10.26.1.txt) |
+
+**Extract the entire ZIP before starting.** Keep the launchers, scripts, executable files, and notices together. Use matching client and server releases; stop an old background server before launching an updated one.
+
+## Quick start
+
+### Host a game
+
+1. Extract the **host package**.
+2. Double-click `start-table-card.bat` to start or reuse a compatible local server and open a client. To run only the server, use `start-server.bat`.
+3. Copy the shareable **LAN IP:port** shown in the launcher window and send it to your friends. The connection address is also saved to `runtime/server-1781-addresses.txt` when using the default port.
+4. Choose a game and create a room. Share its **six-digit room code**.
+5. Players press `R` to ready up; the host presses `S` to start.
+
+Closing the clients does not stop the background server. To stop a server started by the launcher, run this from the host package directory:
 
 ```powershell
-./start-table-card.ps1 -Clients 1
+./scripts/stop-local-server.ps1 -Port 1781
 ```
 
-脚本会检查本机是否已有兼容服务；没有时会在后台启动本地服务，然后打开指定数量的终端客户端。可再次运行脚本为同一服务增加客户端。服务端会常驻，关闭客户端不会自动停止服务。
+### Join a friend
 
-启动后窗口会列出“玩家连接地址”：每个地址均为可复制的本机局域网 `IP:端口`，并显示网卡名。多个地址时，选择与玩家同一网络的 Wi-Fi 或以太网地址；给玩家的连接地址列表不再展示回环地址。窗口会保留，地址也保存到 `runtime/server-端口-addresses.txt`。仅监听本机或没有可用局域网网卡时，提示当前不能供其他电脑连接。
+1. Extract the **player package**.
+2. Double-click `join-table-card.bat`.
+3. Enter the host's address, such as `192.168.1.20:1781`, and your nickname.
+4. Select the same game, choose **Join room**, and enter the room code.
 
-只开启服务端、查看连接地址，可双击 `start-server.bat` 或桌面的 `牌桌服务端.bat`；也可执行 `./start-table-card.ps1 -ServerOnly -Port 1781`。直接运行 `bin/table-card-server.exe` 同样会在启动时打印连接地址。地址显示按实际监听范围生成，只监听回环地址时不会提示可供其他电脑连接的局域网地址。
+The default port is **TCP 1781**. On the same LAN, use the address shown by the host. The host's firewall and network must allow incoming connections. Internet play requires a reachable host address and port; TableCard does not currently provide a cloud relay or NAT traversal service.
+
+### Play alone
+
+| Entry point | What it opens |
+| --- | --- |
+| `start-snake.bat` | Offline Snake, without starting a server |
+| `start-pokemon.bat` | The text adventure; local adventure remains available if the server is unreachable |
+| **Bot practice** in a networked mode's menu | A server-hosted practice game with bots |
+
+The main game selector also offers Snake (`0`) and the text adventure (`P`) when a server is unavailable. Bot practice for the networked modes requires a running server.
+
+### Open several local clients
+
+Run these commands in the **host package** or source checkout:
 
 ```powershell
-# 同时打开 4 个本地终端客户端
+# Start or reuse the local server and open four clients.
 ./start-table-card.ps1 -Clients 4
 
-# 启动时交互输入客户端数量
+# Ask how many clients to open.
 ./start-table-card.ps1 -PromptClients
 
-# 停止脚本启动的本地服务
-./scripts/stop-local-server.ps1 -Port 1781
+# Run only a local server on a chosen port.
+./start-table-card.ps1 -ServerOnly -Port 1781
 
-# 安装桌面“启动牌桌.bat”和“牌桌本地测试.bat”入口
-./scripts/install-desktop-launcher.ps1
-
-# 生成房主包与玩家包（Windows）
-./scripts/package-windows.ps1
-```
-
-脚本会在 `dist/` 下生成两个 ZIP。`Table-Card-Host-Windows-*.zip` 包含服务端、客户端和本地启动器；`Table-Card-Client-Windows-*.zip` 只包含客户端和联网启动器。音乐已编入客户端程序。接收者不需要安装 Go、Docker、Redis 或数据库。
-
-桌面上的 `启动牌桌.bat` 会询问要打开几个客户端；`牌桌本地测试.bat` 会在独立的 18781 端口直接打开 4 个客户端，方便测试四人桌。测试后可用 `./scripts/stop-local-server.ps1 -Port 18781` 停止后台服务。
-
-本地新模式入口 `牌桌草坪接力.bat` 使用独立20881端口，不干扰旧服务；启动后大厅按G，创建双人房间或选4进入人机练习。手动停止该入口服务使用 `./scripts/stop-local-server.ps1 -Port 20881`。当前新模式是本地开发版本，未发布GitHub Release；新旧程序规则版本不同，不要混用。
-
-## 多人连接
-
-本机启动多个客户端时，它们会自动连接同一服务端。在一个客户端选择模式后创建房间，其他客户端输入房间号加入；按 `R` 准备，按 `S` 开始。快速匹配等待 15 秒后由机器人补足座位。用户断线超过 30 秒后由机器人接管其座位。
-
-朋友要通过网络连接时，房主需在可访问的电脑上运行服务端并开放所用 TCP 端口，再让玩家连接房主的地址：
-
-同一局域网玩家可直接输入房主启动窗口中显示的 `IP:端口`。显示地址不代表已修改防火墙或路由；Windows 防火墙提示时允许所用网络，网络也需允许电脑之间互访。
-
-```powershell
+# Connect to another computer's server.
 ./start-table-card.ps1 -Server 192.168.1.20:1781
 ```
 
-公网游玩还需要玩家之间能访问房主网络；本项目当前没有云端匹配或中继服务。
+The launcher checks server compatibility before connecting. In a source checkout it can build the Go executables when needed; portable packages contain prebuilt executables.
 
-### 在线玩家与消息
+## Games
 
-联网客户端共享整个服务端的在线玩家列表，即使玩家处于不同游戏也能收取全服消息或发给自己的私聊。宽度至少120列时显示在线侧栏，包含昵称、当前模式、房间和游戏状态；`F4`打开紧凑玩家选择器，`↑/↓`选择玩家，`Enter`选择私聊对象。
+Press the listed key in the game selector. Networked modes provide room creation, matching, and bot practice.
 
-`F6`选择全服广播，`F7`选择当前房间，`F8`选择私聊；按 `/` 打开聊天，`Enter`发送，`Esc`返回游戏。输入文字时聊天记录继续显示和更新。`F3`提供编号中文短语，所有模式都可使用。房间消息仅发给该房间玩家，全服消息和私聊可跨模式接收。离线时不能发送网络消息。
+| Game | Key | Players | Included gameplay |
+| --- | :---: | --- | --- |
+| **Dou Dizhu** | `1` | 3 | Bidding, landlord versus two farmers, legal combinations, multipliers, and bot practice |
+| **Liar's Bar** | `2` | 4 | Hidden cards, bluffing, challenges, elimination, and paced bot turns |
+| **Sichuan Mahjong** | `3` | 4 | Blood-battle play, optional three-tile exchange, missing suit, peng/gang/hu, scoring, and configurable house rules |
+| **Xiangqi** | `4` | 2 | Clickable Chinese chess, check and mate, repetition adjudication, and a bot |
+| **Chess** | `5` | 2 | Castling, en passant, promotion, checkmate, stalemate, and draw detection |
+| **Gomoku** | `6` | 2 | A 15×15 board, freestyle five-in-a-row, and a bot |
+| **Go** | `7` | 2 | A 19×19 board, captures, positional superko, passing, dead-stone agreement, and Chinese area scoring |
+| **UNO** | `8` | 2–4 | A 108-card deck, stacking penalties, jump-ins, 7/0 hand exchange, +4 challenges, house rules, and a 500-point series |
+| **Tetris survival** | `9` | 2 or 4 | Identical seven-bag sequences, ghost pieces, shared speed increases, elimination, and spectating |
+| **Snake** | `0` | 1, offline | Food, growth, increasing speed, pause/restart, and wall or self-collision |
+| **Garden Relay** | `G` | 2 | Real-time 5×9 lawns, ten plants, nine zombie types, mouse planting, and defeated-enemy transfers |
+| **Pokémon text adventure** | `P` | 1; optional 2-player interactions | 151 species, Kanto-inspired progression, original side quests, catching, leveling, evolution, player battles, and trades |
 
-### 把客户端发给朋友
+### Tetris survival
 
-1. 房主解压 `Table-Card-Host-Windows-*.zip`，双击其中的 `start-table-card.bat`，在终端大厅创建房间。
-2. 把 `Table-Card-Client-Windows-*.zip` 原样发给朋友，同时告诉他们房主的 `IP:端口`（默认端口 `1781`）和房间号。同一局域网可使用房主的局域网 IP。
-3. 朋友完整解压玩家包，双击 `join-table-card.bat`，输入房主地址和昵称，再在大厅输入房间号加入。
+Every player has a 10×20 board and the same piece sequence. After the opening countdown, the shared level increases **every 20 seconds**, even if nobody clears a line. Gravity speeds up from **1,000 ms to 100 ms per cell**; the fixed lock window also shortens. The last surviving player wins. This is a survival mode without garbage-line attacks.
 
-两种包都带有使用说明与许可证。玩家包无需启动服务端，也无需安装 Go。跨互联网连接需要房主的网络能接收入站连接；本项目当前没有中继服务器。
+Use `Left` / `Right` to move, `Up` / `Down` to rotate clockwise / counterclockwise, **`S` to soft-drop**, and `Space` to hard-drop. Opening chat or rules does not pause the match.
 
-Windows下载保护可能在启动EXE时显示“操作已被用户取消”（1223）。发行程序暂未做Windows数字签名：先核对发布页的SHA-256，再在下载ZIP的属性中解除锁定并重新解压，或在已核验的 `bin/table-card.exe`、`bin/table-card-server.exe` 属性中解除锁定。启动脚本遇到取消时会显示具体程序路径和处理提示；只修改执行策略不能清除EXE的互联网下载标记。
+### Garden Relay
 
-新版便携包也提供 `repair-startup.bat`：核对发布来源和 ZIP 校验值后运行，输入 `1` 确认信任。工具先检查 `PACKAGE-SHA256SUMS.txt` 和所有包内 EXE 的 SHA-256，再只解除这些 EXE 的下载锁定；清单缺失、格式错误或文件校验失败时拒绝修复。它不会关闭系统安全保护，也不会操作包外程序。包内清单用于检查文件一致性，不是作者数字签名。
+Defend your own lawn and press `Tab` or `V` to inspect your opponent's live lawn. Every defeated zombie returns at the right edge of the opponent's **same row**, with full health and armor; this repeats on every defeat. There are no lawnmowers. Let a zombie reach the brain and you lose; simultaneous breaches are a draw.
 
-## 操作
+Click a plant card, then a cell on your lawn to plant it. Keyboard selection and the shovel are also supported. Combat continues while inspecting the other lawn, chatting, or reading rules. See the [Garden Relay guide](docs/garden-relay.md) for timings and controls.
 
-原有十一种模式配置不同的背景音乐；草坪接力暂复用骗子酒馆曲目，模式首页也会切换对应音轨。一般界面按 `M` 开关；宝可梦冒险界面按 `F9`。曲目、作者、CC0 来源与处理说明见 [游戏音频](docs/game-audio.md)。
+### Pokémon text adventure
 
-宝可梦战斗可输入 `V` + Enter 查看对手精灵总数、剩余、已击败与后备数；输入 `P` + Enter，队伍列表直接显示升级还需经验，再选择伙伴查看进化等级及招式效果。长详情用 ↑/↓ 阅读。地图及状态栏用 `YOU` 标出当前地区与建筑。
+Choose actions with numbers or English letters followed by `Enter`. The adventure combines a Kanto-inspired eight-badge and League route with original side quests, three-shake catching, shops, experience, and evolution. Species facts, level-up moves, growth groups, and twelve sampled wild encounter tables use first-generation Red data; the game is a fan adaptation with simplified systems and original elements.
 
-- 大厅：`E` 编辑昵称，`←/→` 调整人数；选择快速匹配、创建房间、加入房间或人机练习
-- 房间：`R` 准备，`S` 开始，`/` 英文聊天，`F3` 编号中文短语
-- 对局：按界面提示操作，`/` 聊天，`F1` 规则，`F2` 结束后再开一局，`M` 音乐，`Del` 离桌
-- 棋盘：鼠标点击棋子和目标点；方向键移动光标，`Enter` 选中或落子
-- 斗地主：`←/→` 移动选牌，`Space` 切换选择，`Enter` 出牌，`P` 不出
-- 俄罗斯方块：大厅按 `9` 进入，`←/→` 选择 2 人或 4 人；对局 `←/→` 移动、`↑/↓` 顺/逆时针旋转、`S` 加速下落、`Space` 快速落底。选“4. 人机练习”可立即开始与机器人对战
-- 贪吃蛇：大厅按 `0` 进入，选择开始游戏；`方向键 / WASD` 控制，`Enter / Space` 开始，`P / Space` 暂停或继续，`F2 / R` 重开，`Del / Q` 回到单机菜单
-- 宝可梦：大厅按 `P` 进入，或双击 `start-pokemon.bat` / 桌面 `牌桌宝可梦.bat`；输入本页数字或英文字母后按 `Enter`，`M` 地图、`C` 城市中心、`H` 指南，`F5` 存档，`F9` 音乐，`Del` 保存返回
-- 在线与聊天：`F4`选玩家，`F6`全服 / `F7`房间 / `F8`私聊；`/`输入，`Enter`发送，`F3`编号短语，`Esc`退出；输入时记录持续刷新
-- `Ctrl+C` 退出客户端
+- `M`: regional map; `C`: city center; `W`: world map; `H`: help.
+- `P`: party, experience needed for the next level, evolution conditions, and move details.
+- `V`: the opposing trainer's team counts during battle.
+- `L`: the online trainer center for mutually accepted battles and trades on the same server.
+- `F5`: save; `F9`: music; `Del`: save and return.
 
-主动离开正在进行的对局会将座位交给机器人。离开等待房间会移除玩家；没有真人玩家的房间会关闭。
+For player battles, each participant needs at least 300 coins. The winner gains a net 300 coins and the loser loses 300; a draw refunds the stakes. Leaving or disconnecting counts as a forfeit. Use distinct nicknames and one window per identity. Details and data sources are in the [text adventure guide](docs/pokemon-text-adventure.md).
 
-### 俄罗斯方块比赛
+## Controls and chat
 
-每人一个独立的 10×20 棋盘，开局倒计时 3 秒，使用相同的七袋方块序列（每袋包含七种方块各一块）。填满整行后自动清除，上方方块下移；一次清除 1/2/3/4 行分别获得 100/300/500/800 分，再乘当前等级。全桌共享时间等级：开局倒计时结束后每 20 秒升一级，下落间隔每级乘 0.8，从 1000ms/格缩至最低 100ms/格（第12级，约220秒）。界面显示等级、间隔、已过时间和距离下一次加速的秒数；即使没有消行也会加速。首次触地后的落定缓冲从350ms逐级降至150ms，平移和旋转不会重置截止时间；空格仍立即落底。
+Follow the current screen's hints: some game-specific keys have different meanings between modes.
 
-清行后堆积仍触到顶部，或下一个方块无法生成，就会被淘汰；最后存活者获胜，同一服务器时钟周期内所有剩余玩家同时触顶算平局。得分用于展示，胜负按存活判定。本模式采用纯生存规则，不发送垃圾行。淘汰后可以观战，比赛结束后按 `F2` 重开。
+| Context | Controls |
+| --- | --- |
+| Game selector | Arrow keys or the game shortcut; `Enter` to enter; `E` to edit nickname |
+| Networked mode menu | `1` match, `2` create, `3` join, `4` bot practice, `5` leaderboard, `6` personal results, `7` rules, `8` back |
+| Waiting room | `R` ready, `S` start |
+| Board games | Click a piece and destination, or move the keyboard cursor and press `Enter` |
+| In a match | `F1` rules, `Del` leave the table, `F2` rematch after the game ends |
+| Music | `M` in ordinary screens; `F9` in the text adventure |
+| Chat input | `/` open, `Enter` send, `Esc` return to the game |
+| Chat scope | `F6` server-wide, `F7` current room, `F8` selected player's private messages |
+| Online players | `F4` opens a compact player picker; arrow keys select, `Enter` chooses a private-message recipient |
+| Preset phrases | `F3`, then a number to send a Chinese phrase without typing Chinese |
+| Exit | `Ctrl+C` |
 
-宽窗口展示并排棋盘，普通窗口突出自己的大棋盘并展示对手缩略棋盘；灰色虚影表示落点。机器人落底决策间隔随等级从约1.5秒缩至350ms，也受同一自动重力和触顶规则约束，使用消行、空洞、堆积高度及表面平整度的启发式评价。自动下落、淘汰和结算均由服务器执行，切到聊天或规则界面时比赛仍会继续。使用俄罗斯方块专属背景曲，落定和消行有提示音。
+Chat continues to update while you type. Server-wide messages and private messages work across different games on the same server; room chat stays within that room. At **120 columns or wider**, an online sidebar shows each player's mode, room, and state.
 
-从旧版本更新后，需先停止旧后台服务再运行启动脚本，让大厅加载新增模式；源码更新不会自动替换正在进行对局的服务器。
+Leaving an active multiplayer match hands your seat to a bot. Disconnected seats are held for 30 seconds before bot takeover; quick matching fills remaining seats with bots after 15 seconds. See the [complete control reference](docs/terminal-controls.md) for individual games.
 
-安装桌面入口后，`牌桌俄罗斯方块.bat` 会询问客户端数量，并使用独立的 `19881` 端口打开大厅；按 `9` 进入俄罗斯方块。这个入口可以与旧服务同时使用。该端口的服务停止命令为 `./scripts/stop-local-server.ps1 -Port 19881`。
+## Architecture
 
-### 贪吃蛇离线单机
+```text
+Terminal clients
+  Bubble Tea + Bubbles + Lip Gloss
+          |
+          | HTTP room requests + WebSocket events
+          v
+Go server
+  Rooms / presence / chat / statistics
+          |
+          +-- Turn-based game rules and bots
+          +-- Real-time Tetris and Garden Relay simulation
+          +-- Optional adventure battles and trades
 
-双击 `start-snake.bat`，或安装桌面入口后双击 `牌桌贪吃蛇.bat`，直接打开单机界面。也可运行 `table-card.exe -snake`。单机入口不连接或启动服务器；玩家便携包同样包含这个入口。正常大厅即使无法连接服务，仍可按 `0` 玩贪吃蛇。
-
-棋盘为 28×18 格，初始长度 4。每吃一个食物增长一格、加 10 分，每吃五个升一级，移动间隔从 220 毫秒逐级缩短，最低 80 毫秒。触墙或接触当前身体直接死亡，填满棋盘获胜。界面展示当前分数、长度、等级和本次客户端运行期间的最高分；最高分不上传、不跨启动保存。
-
-方向输入与移动分开：最多缓冲两次合法转向，每个节拍消费一次；重复输入、直接反向和满缓冲输入都会被忽略。终端报告的长按重复事件会被过滤。所有规则操作都由客户端事件循环串行执行，计时消息带有局号和步号，暂停、退出或重开后旧计时消息无效。查看规则时自动暂停，关闭规则后按 `P / Space` 继续。音乐沿用骗子酒馆背景曲，吃食物和结束时有提示音。
-
-### 宝可梦冒险与玩家联机
-
-双击 `start-pokemon.bat` 直接进入冒险，入口会尝试连接所配置服务，连接失败仍可离线冒险。也可运行 `table-card.exe -pokemon -name Alice -server 192.168.1.20:1781`，或 `./start-pokemon.ps1 -Name Alice -Server 192.168.1.20:1781`。便携玩家包包含相同入口；大厅无法联网时也能按 `P` 开始。联网功能需双方连接同一个服务端，使用不同昵称，各自只开一个身份窗口。
-
-首次用数字选择初始伙伴。冒险、战斗、球种、药品、购买数量、进化、电脑、图鉴和剧情都有编号菜单，无需输入中文。`M` 地区地图、`C` 城市中心、`W` 世界地图、`H` 指南、`P` 队伍、`B` 背包、`Q` 支线（字母后按Enter）；`[` / `]` 翻页，`0` / Esc 返回。每个地区的城市中心和商店都有地图墙，可按编号选择建筑或已解锁城市。建议96列×30行以上，小窗口会分页。
-
-主线保留关都八道馆和联盟框架，每章六名训练者胜利后推进主线。十二个地区各增加一个原创委托，包含接受、调查、对战、奖励和结尾。Lv20并获得两徽章或完成三个支线后，可教学明确标注为原创的伙伴专属技。旧存档迁移保留等级和当前等级内的经验进度比例，修正成长曲线及旧模板中不合法的招式；按原昵称继续进度，重置通过确认菜单或 `new yes`。
-
-输入 `L` + Enter 打开训练家联机中心，先同步最新队伍，再按编号选择在线训练家。对战或交换须对方接受：胜者净得300金币，败者净失300金币，平局退还押金；双方开战前至少持有300金币。玩家对战输入 `1–4` + Enter 选招，`S 1–6` + Enter 换人，双方提交后统一结算；`Del`退出或断线按认输处理。交换依次选择双方伙伴，确认提案后由对方接受，保留经验和招式并结算通信进化。邀请90秒失效；当前回合3分钟超时，双方均未提交则平局退还，一方已提交则未提交者判负。服务重启会退还未完成对战的押金。
-
-捕获采用三次摇球全部通过成功；技能学习、成长曲线和各章节采样地点的遇敌率按第一世代红版事实数据修正，故事建筑与三次摇球表现仍为项目改编。招式说明可查看威力、命中、伤害与状态/能力变化；训练家和馆主登场播报名字。详细选项、数据范围和来源见 [宝可梦冒险说明](docs/pokemon-text-adventure.md)；十二种模式的全部操作见 [终端ASCII操作清单](docs/terminal-controls.md)。
-
-## 实现栈
-
-- Go、Bubble Tea v2、Bubbles v2、Lip Gloss v2：终端界面和输入
-- `net/http`、`coder/websocket`：房间 API 和实时同步
-- 游戏各自独立的规则包：服务端执行合法性校验与机器人的行动
-- 本地 JSON 文件：玩家身份、战绩和排行榜
-- 内嵌 MP3：发行版本无需额外下载音乐文件
-
-音乐开启后直接从内嵌文件流读取，避免为每个客户端复制整首 MP3 到堆内存；空闲对局的服务器循环也不再反复序列化完整棋盘。
-
-本地游玩不需要 Docker、Redis 或数据库。构建源码需要 Go；Windows 便携包的使用者无需安装 Go。
-
-## 构建与检查
-
-```powershell
-go build ./...
-go test ./...
+Local client state
+  Snake / text adventure / identity / saves / embedded audio
 ```
 
-执行全仓库测试、覆盖率、静态检查与并发检查：
+| Layer | Implementation |
+| --- | --- |
+| Language | Go 1.26+ |
+| Terminal UI | Bubble Tea v2, Bubbles v2, Lip Gloss v2 |
+| Networking | Go `net/http`, `coder/websocket`; multiplayer rules run on the server |
+| Bots | Game-specific heuristics under the Sunjiajia bot design; no external AI service required |
+| Persistence | Local JSON files for identities, saves, statistics, and adventure social state; live rooms are in memory |
+| Audio | Embedded MP3, `beep`, and Oto; music is streamed from embedded files |
+| Distribution | Windows portable ZIPs built with PowerShell |
+
+Client and server use default Go runtime soft memory budgets of **64 MiB** and **128 MiB**, with at most two and four execution cores respectively. Existing `GOGC`, `GOMEMLIMIT`, and `GOMAXPROCS` settings take priority. These are runtime budgets, not hard limits on total process memory. See the [memory report](docs/memory-and-test-report.md).
+
+## Build from source
+
+Install **Go 1.26 or later**. The supplied launchers and packaging scripts target Windows; the published portable binaries target Windows x64. Run these commands in the repository root:
 
 ```powershell
+git clone https://github.com/17hwliao/Table-Card.git
+cd Table-Card
+
+go build -o bin/table-card.exe ./cmd/table-card
+go build -o bin/table-card-server.exe ./cmd/table-card-server
+./start-table-card.ps1 -Clients 1
+```
+
+To launch without the wrapper scripts, keep the server running in one terminal and open the client in another:
+
+```powershell
+# Terminal 1: listen on the default multiplayer port.
+./bin/table-card-server.exe -listen :1781
+
+# Terminal 2: substitute the reachable address printed by your server.
+./bin/table-card.exe -server 192.168.1.20:1781 -name Alice
+```
+
+### Development checks
+
+```powershell
+go test ./...
+go vet ./...
+
+# Full test runner, race checks, benchmarks, and launcher checks.
 ./scripts/test-project.ps1 -Race -Benchmarks -Launchers
 ```
 
-性能探针见 `scripts/measure-memory.ps1` 和 `scripts/measure-server-memory.ps1`。本轮测试结果、测量范围与前后对照见 [内存优化与测试报告](docs/memory-and-test-report.md)。客户端默认采用 64MiB Go 内存软预算和最多两个执行核心；服务端为 128MiB 和最多四个核心，已有 `GOGC`、`GOMEMLIMIT`、`GOMAXPROCS` 环境设置优先。这是 Go 运行时软预算，整个进程仍会有终端、音频及系统开销。
+### Create portable packages
 
-具体规则范围和当前已知限制见 [`docs/mode-migration-status.md`](docs/mode-migration-status.md)。
+```powershell
+./scripts/package-windows.ps1 -Architecture amd64
+```
 
-## 许可证与来源
+The script writes separate host and client ZIPs into `dist/`, with executable checksums and license notices. An `arm64` build option is also available; the current published packages are x64. Desktop launcher installation is available through `scripts/install-desktop-launcher.ps1`.
 
-本项目源代码依 GNU GPL v3 发布，完整文本见 [`LICENSE`](LICENSE)。第三方组件及由项目所有者提供的音乐素材说明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+## Troubleshooting and current limits
 
-## 本次全量审查
+- **Cannot connect:** confirm that the host is running a matching server version, check the displayed IP and TCP port, and allow the connection through the host's firewall. A room code alone does not identify a server.
+- **Old modes or a version mismatch:** stop the old background server before starting the new host package. Updating source files does not replace an already running process.
+- **Windows reports that the operation was canceled (1223):** the executables are currently unsigned. Verify the release ZIP against its published SHA-256, unblock the downloaded ZIP in Windows file properties, and extract it again. The included `repair-startup.bat` can verify the package's executable checksums and unblock only those files after confirmation; it does not disable system protection. A checksum manifest is not a digital signature.
+- **The board does not fit:** enlarge the terminal as directed by the size notice. Not every mode has a fully scrollable game view. Use a font with Chinese glyph support.
+- **Rules differ from your local table:** Mahjong and UNO use the project's configurable house rules. Gomoku is freestyle; Xiangqi uses casual repetition rules; Chess has no clock; Go bots do not adjudicate life and death automatically. The [mode status document](docs/mode-migration-status.md) records the precise scope.
+- **Local state:** live rooms do not survive a server restart. Snake's high score lasts for the current client run; adventure progress is saved by nickname.
 
-见[2026-10-07全量审查及修复记录](docs/full-review-2026-10-07.md)：覆盖十一种终端模式以及共享联网、输入、身份/战绩、音频和分发代码，记录已修复问题、参考资料和验证边界。
+## Documentation
+
+The detailed guides below are currently primarily in Chinese. This English README covers download, setup, core controls, and development entry points.
+
+| Guide | Contents |
+| --- | --- |
+| [Complete terminal controls](docs/terminal-controls.md) | Menus, keys, mouse actions, and ASCII-only choices for all twelve modes |
+| [Mode status](docs/mode-migration-status.md) | Implemented rules, bot behavior, and known limitations |
+| [Garden Relay](docs/garden-relay.md) | Plants, zombies, transfer rules, controls, and simulation boundaries |
+| [Text adventure](docs/pokemon-text-adventure.md) | Commands, story progression, experience, evolution, encounters, player battles, and trading |
+| [Bot design](docs/sunjiajia-design.md) | Sunjiajia decision-making and game integration |
+| [Game audio](docs/game-audio.md) | Tracks, source links, authors, licenses, and processing details |
+| [Memory and test report](docs/memory-and-test-report.md) | Measurement methods, runtime budgets, and test scope |
+| [Recovery and fixes, October 26](docs/recovery-and-fixes-2026-10-26.md) | Recovered features and verified repairs |
+| [Full review, October 26](docs/full-review-2026-10-26.md) | Module relationships, confirmed defects, fixes, and verification limits |
+
+To report a problem, [open an issue](https://github.com/17hwliao/Table-Card/issues) with the release version, game mode, terminal size, and reproduction steps. Remove private addresses and personal data from logs before sharing them.
+
+## License and credits
+
+TableCard's source code is distributed under **GNU GPL v3**; see [LICENSE](LICENSE). Dependencies, factual data, music sources, and retained notices are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+The eleven embedded music recordings are adaptations of CC0 music by **Ragnar Random**. Garden Relay currently shares the tavern track. The [audio catalog](docs/game-audio.md) records the individual sources and assignments.
+
+The project's logo, palette, and creation brief are available in the [brand assets](docs/branding/README.md).
+
+The Pokémon adventure is a fan adaptation. Pokémon names and characters belong to their respective owners; the software license does not grant rights to third-party characters or trademarks. Data sources and their notices are retained in the repository. The project does not distribute official game ROMs, artwork, dialogue scripts, or music.
