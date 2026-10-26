@@ -51,6 +51,7 @@ var modes = []modeInfo{
 	{table.GoMode, "围棋", 2, 2, "19 路规则引擎与终端棋盘已接入"},
 	{table.UNOMode, "UNO", 2, 4, "108 张牌规则引擎已接入"},
 	{table.TetrisMode, "俄罗斯方块", 2, 4, "双人 / 四人实时生存对战 · 人机练习"},
+	{table.GardenMode, "草坪接力 · 植物大战僵尸对战", 2, 2, "击败僵尸满血转移至对方同一行 · 脑子被吃即失败"},
 }
 
 func New() *Server {
@@ -136,6 +137,10 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 	}
 	if request.Mode == table.TetrisMode && request.Seats != 2 && request.Seats != 4 {
 		writeError(w, http.StatusBadRequest, "俄罗斯方块只支持双人或四人对战")
+		return
+	}
+	if s.socialRoomLocked(request.PlayerID) != nil {
+		writeError(w, http.StatusConflict, "你已在另一个房间，请先离桌再创建房间")
 		return
 	}
 	room, err := s.rooms.Create(request.Mode, request.Seats, table.Player{ID: request.PlayerID, Name: request.Name})
@@ -274,6 +279,10 @@ func (s *Server) roomRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		player.Bot = false
 		if !authorize(w, r, player.ID) {
+			return
+		}
+		if s.socialRoomLocked(player.ID) != nil {
+			writeError(w, http.StatusConflict, "你已在房间中，请先离桌再加入房间")
 			return
 		}
 		if err := room.Join(player); err != nil {

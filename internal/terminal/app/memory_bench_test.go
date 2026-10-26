@@ -63,7 +63,7 @@ func memoryScene(t testing.TB, mode string) *Model {
 }
 func BenchmarkRenderMode(b *testing.B) {
 	b.Setenv("APPDATA", b.TempDir())
-	for _, mode := range []string{"home", "landlord", "liar_bar", "mahjong", "chess", "western_chess", "gomoku", "go", "uno", "tetris", "snake", "pokemon"} {
+	for _, mode := range []string{"home", "landlord", "liar_bar", "mahjong", "chess", "western_chess", "gomoku", "go", "uno", "tetris", "garden_relay", "snake", "pokemon"} {
 		b.Run(mode, func(b *testing.B) {
 			m := memoryScene(b, mode)
 			defer m.Close()
@@ -103,7 +103,7 @@ func TestMemoryProcessHelper(t *testing.T) {
 }
 func TestAllTerminalModesRenderAndExit(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
-	for _, mode := range []string{"home", "landlord", "liar_bar", "mahjong", "chess", "western_chess", "gomoku", "go", "uno", "tetris", "snake", "pokemon"} {
+	for _, mode := range []string{"home", "landlord", "liar_bar", "mahjong", "chess", "western_chess", "gomoku", "go", "uno", "tetris", "garden_relay", "snake", "pokemon"} {
 		t.Run(mode, func(t *testing.T) {
 			m := memoryScene(t, mode)
 			defer m.Close()

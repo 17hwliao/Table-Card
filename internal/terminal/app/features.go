@@ -38,7 +38,7 @@ func (m *Model) needsClock() bool {
 	if time.Now().Unix() < m.pauseUntil {
 		return true
 	}
-	if m.room.Mode == table.TetrisMode {
+	if m.room.Mode == table.TetrisMode || m.room.Mode == table.GardenMode {
 		var v struct {
 			StartAt int64 `json:"startAt"`
 			Started bool  `json:"started"`
@@ -71,6 +71,35 @@ func tetrisEffect(before, after json.RawMessage, id string) (int, bool) {
 						return 20, true
 					}
 					return 8, true
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+func gardenEffect(before, after json.RawMessage, id string) (int, bool) {
+	type player struct {
+		ID                       string `json:"id"`
+		Actions, Kills, Received int
+	}
+	var old, next struct{ Players []player }
+	if json.Unmarshal(before, &old) != nil || json.Unmarshal(after, &next) != nil {
+		return 0, false
+	}
+	for _, p := range next.Players {
+		if p.ID == id {
+			for _, previous := range old.Players {
+				if previous.ID == id {
+					if p.Received > previous.Received {
+						return 20, true
+					}
+					if p.Actions > previous.Actions {
+						return 8, true
+					}
+					if p.Kills > previous.Kills {
+						return 3, true
+					}
 				}
 			}
 		}
@@ -452,6 +481,7 @@ func rulesFor(mode table.Mode) string {
 	}
 	common := "\n\n/ 开始聊天；聊天中 Enter 发送、Esc 退出聊天\nEsc 取消选牌/选子；Del 离桌并由机器人接管\nF2 结束后再开一局；M 声音；F1 规则"
 	rules := map[table.Mode]string{
+		table.GardenMode:       "草坪接力 · 植物大战僵尸双人对战\n每人一块5×9草坪，默认只显示自己的草坪。Tab / V切换对手实时草坪。\n方向键或WASD选格，1–9 / 0选择十种植物；点击植物卡选中，再点击草坪种植；也可Enter / 空格种植。\nX切换铲子，Esc取消铲子；查看对方草坪时不能种植或铲除。\n初始150阳光，每5秒自动获得25；向日葵每10秒额外产25。\n每张卡独立冷却，阳光、位置、冷却由服务端校验。\n开局准备3秒，正式开始15秒后首波；双方收到同种、同行的新波。\n任何攻击击败的僵尸在本轮结算后满血、满护甲出现在对方同一行右侧。\n僵尸保留种类，每次死亡都再次转移；减速、狂暴、撑杆和召唤状态重置。\n舞王召出的伴舞也遵循转移规则。没有小推车，任何僵尸到达脑子即失败。\n双方同一时钟周期失守判平。新波间隔逐渐缩短，僵尸移动随时间加快。\n场上至多120个僵尸，达到上限暂停新波/召唤，但不会丢弃转移的僵尸。\n大厅G进入；4人机练习。当前沿用酒馆背景曲，种植、接收和击败使用合成音效。\n聊天/规则/看对手均不暂停实时战斗；Del离桌后机器人接管。",
 		table.SnakeMode:        "贪吃蛇 · 本地单机\n方向键 / WASD 控制方向，每个移动节拍只转向一次。\n不能直接反向；最多缓存两次转向，重复按键忽略。\n吃到食物长度+1、得分+10；每吃5个食物升一级。\n触碰边界或自身立即死亡，不穿墙；填满棋盘获胜。\nEnter / 空格开始；P / 空格暂停或继续，Esc暂停。\nF2 / R重开；Del / Q返回本模式菜单；M开关声音。\n查看规则会自动暂停，返回后按P / 空格继续。\n单机模式不需要服务器、房间或其他玩家。",
 		table.TetrisMode:       "俄罗斯方块 · 生存对战\n双人 / 四人独立 10×20 棋盘，开局倒计时3秒。\n←/→ 移动；↑顺时针、↓逆时针旋转；S加速、空格落底。\n满一行自动消除，上方方块下移；一次可清除1–4行。\n全桌每20秒升一级，落格间隔×0.8，最低100ms。\n首次触地后350ms缓冲逐级缩至150ms，移动不重置。\n堆积触顶或新方块无法生成即淘汰，最后存活者获胜。\n同一时钟周期全部触顶算平局；淘汰后可继续观战。\n各家方块序列相同；灰色虚影标出落点。\n大厅←/→切换2人/4人，选4进入Sunjiajia人机练习。",
 		table.LandlordMode:     "斗地主\n三人叫分：1/2/3，P 不叫。地主先出，两农民合作。\n同型大牌可压，小王大王组成火箭；炸弹提高倍数。\n叫3分立即确定地主；春天/反春天翻倍。\n地主输赢2×倍数，农民各1×倍数；农民共同获胜。\n←/→ 或 Home/End 移动选牌光标，空格切换选牌。\nEnter 出已选牌，P 过牌；数字1–9快捷选牌。",

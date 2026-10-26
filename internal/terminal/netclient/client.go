@@ -32,6 +32,10 @@ type Client struct {
 	socialWriteMu sync.Mutex
 }
 
+// Room envelopes include the room's bounded HTTP options and both lawns for
+// simultaneous games. Keep a finite limit above their combined payload budget.
+const roomMessageReadLimit = 2 << 20
+
 func (c *Client) Identity(id, token string) { c.playerID = id; c.token = token }
 func (c *Client) Leave(ctx context.Context, code, id string) error {
 	return c.request(ctx, http.MethodPost, "/api/rooms/"+url.PathEscape(code)+"/leave", map[string]string{"playerId": id}, nil)
@@ -159,6 +163,7 @@ func (c *Client) Connect(ctx context.Context, code, playerID string) error {
 	if err != nil {
 		return err
 	}
+	conn.SetReadLimit(roomMessageReadLimit)
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 	if c.closed {

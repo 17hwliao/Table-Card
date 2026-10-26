@@ -76,11 +76,8 @@ func (g *Game) AdvanceCapture() {
 		foe := g.Battle.Foes[g.Battle.Enemy]
 		g.say("咔哒！三次摇动通过，捕获%s！", foe.Name())
 		g.obtain(foe)
-		g.Battle = nil
+		g.leaveBattle()
 		g.Capture = nil
-		for i := range g.Party {
-			ResetCombat(&g.Party[i])
-		}
 	}
 }
 func (g *Game) obtain(m Monster) {

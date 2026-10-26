@@ -10,9 +10,9 @@ import (
 
 func TestRepeatedAllModeRoomsReleaseEnginesAndRuntime(t *testing.T) {
 	t.Setenv("TABLE_CARD_DATA_DIR", t.TempDir())
-	s := &Server{rooms: table.NewRoomManager(), registry: games.NewDefaultRegistry(), engines: make(map[string]games.Engine), runtime: make(map[string]*roomRuntime), hub: newRoomHub(), stats: newStatStore()}
+	s := &Server{rooms: table.NewRoomManager(), registry: games.NewDefaultRegistry(), engines: make(map[string]games.Engine), runtime: make(map[string]*roomRuntime), hub: newRoomHub(), social: newSocialHub(), stats: newStatStore()}
 	for round := 0; round < 30; round++ {
-		for _, mode := range []table.Mode{table.LandlordMode, table.LiarBarMode, table.MahjongMode, table.ChessMode, table.WesternChessMode, table.GomokuMode, table.GoMode, table.UNOMode, table.TetrisMode} {
+		for _, mode := range []table.Mode{table.LandlordMode, table.LiarBarMode, table.MahjongMode, table.ChessMode, table.WesternChessMode, table.GomokuMode, table.GoMode, table.UNOMode, table.TetrisMode, table.GardenMode} {
 			seats := 2
 			if mode == table.LandlordMode {
 				seats = 3

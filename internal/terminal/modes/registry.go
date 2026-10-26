@@ -4,6 +4,7 @@ import (
 	"github.com/17hwliao/table-card-independent/internal/table"
 	"github.com/17hwliao/table-card-independent/internal/terminal/modes/board"
 	"github.com/17hwliao/table-card-independent/internal/terminal/modes/cards"
+	"github.com/17hwliao/table-card-independent/internal/terminal/modes/garden"
 	"github.com/17hwliao/table-card-independent/internal/terminal/modes/mahjong"
 	"github.com/17hwliao/table-card-independent/internal/terminal/modes/tetris"
 	"github.com/17hwliao/table-card-independent/internal/terminal/ui"
@@ -12,6 +13,8 @@ import (
 func New(mode table.Mode) ui.Controller {
 	var controller ui.Controller
 	switch mode {
+	case table.GardenMode:
+		controller = garden.New()
 	case table.TetrisMode:
 		controller = tetris.New()
 	case table.LandlordMode:

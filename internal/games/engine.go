@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/17hwliao/table-card-independent/internal/chinesechess"
+	"github.com/17hwliao/table-card-independent/internal/garden"
 	"github.com/17hwliao/table-card-independent/internal/goengine"
 	"github.com/17hwliao/table-card-independent/internal/gomoku"
 	"github.com/17hwliao/table-card-independent/internal/internationalchess"
@@ -67,6 +68,9 @@ func (r *Registry) Available(mode table.Mode) bool {
 
 func NewDefaultRegistry() *Registry {
 	registry := NewRegistry()
+	_ = registry.Register(table.GardenMode, func(players []table.Player) (Engine, error) {
+		return garden.NewEngine(players)
+	})
 	_ = registry.Register(table.TetrisMode, func(players []table.Player) (Engine, error) {
 		return tetris.NewEngine(players)
 	})

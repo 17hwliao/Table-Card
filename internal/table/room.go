@@ -14,7 +14,7 @@ import (
 type Mode string
 
 // Additive rule/UI changes still need a matching backend to take effect.
-const RulesVersion = "2026.10.10-social-pokemon"
+const RulesVersion = "2026.10.26-maintenance"
 
 const (
 	LandlordMode     Mode = "landlord"
@@ -26,6 +26,7 @@ const (
 	GoMode           Mode = "go"
 	UNOMode          Mode = "uno"
 	TetrisMode       Mode = "tetris"
+	GardenMode       Mode = "garden_relay"
 	SnakeMode        Mode = "snake"
 	PokemonMode      Mode = "pokemon"
 )

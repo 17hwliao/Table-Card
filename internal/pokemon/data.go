@@ -45,7 +45,7 @@ func init() {
 		panic("incomplete species data")
 	}
 	for id := 1; id <= 151; id++ {
-		Moves[25+id] = Move{Name: signatureName(id), Type: Dex[id].Types[0], Power: 95, Accuracy: 100, PP: 8, Effect: "ORIGINAL_STORY_SKILL"}
+		Moves[25+id] = Move{ID: 25 + id, Name: signatureName(id), Type: Dex[id].Types[0], Power: 95, Accuracy: 100, PP: 8, Effect: "ORIGINAL_STORY_SKILL"}
 	}
 	var moves []Move
 	if err := json.Unmarshal(genOneMovesJSON, &moves); err != nil {

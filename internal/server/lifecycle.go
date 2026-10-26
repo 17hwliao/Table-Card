@@ -273,6 +273,10 @@ func (s *Server) quickMatch(w http.ResponseWriter, r *http.Request) {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
 	player := table.Player{ID: req.PlayerID, Name: req.Name}
+	if s.socialRoomLocked(player.ID) != nil {
+		writeError(w, http.StatusConflict, "你已在房间中，请先离桌再匹配")
+		return
+	}
 	for _, room := range s.rooms.List() {
 		v := room.Snapshot()
 		rt := s.runtime[v.Code]

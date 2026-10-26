@@ -17,18 +17,8 @@ func (g *Game) battleCommand(command string, words []string) error {
 			return errors.New("招式编号为1–4")
 		}
 		p := &g.Party[b.Active]
-		if p.Moves[n-1] < 0 {
-			return errors.New("该招式槽尚未学习招式")
-		}
-		hasPP := false
-		for _, pp := range p.PP {
-			hasPP = hasPP || pp > 0
-		}
-		if hasPP && p.PP[n-1] == 0 && p.Combat.ChargeMove == 0 && p.Combat.RepeatTurns == 0 {
-			return errors.New("该招式PP耗尽，请选择其他招式")
-		}
-		if p.Combat.DisableSlot == n && p.Combat.DisableTurns > 0 {
-			return errors.New("该招式暂时被封锁，请选择其他招式")
+		if err := validateBattleMove(p, n-1); err != nil {
+			return err
 		}
 		foe := &b.Foes[b.Enemy]
 		enemyMove := g.enemyMove(foe, p)
@@ -77,10 +67,7 @@ func (g *Game) battleCommand(command string, words []string) error {
 		chance := 0.7 + float64(speed(p)-speed(f))/200
 		if g.rng.Float64() < max(0.1, min(0.95, chance)) {
 			g.say("成功离开草丛。散步后还可以再次探索。")
-			g.Battle = nil
-			for i := range g.Party {
-				ResetCombat(&g.Party[i])
-			}
+			g.leaveBattle()
 		} else {
 			g.say("没有逃脱！")
 			g.enemyTurn()
@@ -89,6 +76,38 @@ func (g *Game) battleCommand(command string, words []string) error {
 		return errors.New("正在战斗：move 1–4 / catch 1 / switch 2 / use potion 1 / run")
 	}
 	return nil
+}
+
+// Both adventure and multiplayer must allow Struggle when no usable move
+// remains, and must let an already committed multi-turn action finish.
+func validateBattleMove(p *Monster, slot int) error {
+	if slot < 0 || slot >= len(p.Moves) || p.Moves[slot] < 0 {
+		return errors.New("该招式槽尚未学习招式")
+	}
+	if p.Combat.ChargeMove > 0 || p.Combat.RepeatTurns > 0 || p.Combat.BideTurns > 0 || p.Combat.Recharge > 0 {
+		return nil
+	}
+	usable := false
+	for i, id := range p.Moves {
+		usable = usable || (id >= 0 && p.PP[i] > 0 && (p.Combat.DisableSlot != i+1 || p.Combat.DisableTurns <= 0))
+	}
+	if !usable {
+		return nil
+	}
+	if p.PP[slot] <= 0 {
+		return errors.New("该招式PP耗尽，请选择其他招式")
+	}
+	if p.Combat.DisableSlot == slot+1 && p.Combat.DisableTurns > 0 {
+		return errors.New("该招式暂时被封锁，请选择其他招式")
+	}
+	return nil
+}
+
+func (g *Game) leaveBattle() {
+	g.Battle = nil
+	for i := range g.Party {
+		ResetCombat(&g.Party[i])
+	}
 }
 func speed(m *Monster) int {
 	s := combatStat(m, Dex[m.Species].Speed, 3)
@@ -311,10 +330,7 @@ func (g *Game) evolveMonster(m *Monster, id int) {
 }
 func (g *Game) victory() {
 	b := g.Battle
-	for i := range g.Party {
-		ResetCombat(&g.Party[i])
-	}
-	g.Battle = nil
+	g.leaveBattle()
 	if b.Kind == "wild" {
 		g.say("野生对战结束。捕获需要在对手倒下前投球。")
 		return

@@ -41,21 +41,29 @@ func Load(server, name string) (Identity, error) {
 		return id, err
 	}
 	data, _ := json.Marshal(id)
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if errors.Is(err, os.ErrExist) {
-		return readIdentity(path)
-	}
+	file, err := os.CreateTemp(dir, ".identity-*.tmp")
 	if err != nil {
 		return Identity{}, err
 	}
+	defer os.Remove(file.Name())
 	_, err = file.Write(data)
+	if err == nil {
+		err = file.Sync()
+	}
 	closeErr := file.Close()
 	if err == nil {
 		err = closeErr
 	}
 	if err != nil {
-		_ = os.Remove(path)
 		return Identity{}, err
+	}
+	// Publish the complete file without replacing a concurrent creator's
+	// identity. A hard link is atomic across processes, unlike writing into
+	// an O_EXCL-created final pathname which readers can see before close.
+	if err = os.Link(file.Name(), path); errors.Is(err, os.ErrExist) {
+		return readIdentity(path)
+	} else if err != nil {
+		return Identity{}, fmt.Errorf("无法完整发布身份文件：%w", err)
 	}
 	return id, nil
 }

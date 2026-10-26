@@ -76,8 +76,12 @@ func (g *Game) attack(a, d *Monster, slot int) {
 		g.say("%s释放忍耐，造成%d伤害。", a.Name(), loss)
 		return
 	}
-	if a.Combat.RepeatTurns > 0 {
+	repeating := a.Combat.RepeatTurns > 0
+	if repeating {
 		slot = a.Combat.RepeatMove - 1
+		// An attempted repeat consumes one turn even if it misses or meets
+		// an immune target; otherwise the committed move never expires.
+		defer g.advanceRepeat(a)
 	}
 	if slot < 0 || slot >= 4 {
 		return
@@ -93,16 +97,18 @@ func (g *Game) attack(a, d *Monster, slot int) {
 	if releasing {
 		move = Moves[a.Combat.ChargeMove-1]
 		a.Combat.ChargeMove = 0
-	} else if !struggle {
+		struggle = false
+	} else if repeating || !struggle {
 		id := a.Moves[slot]
-		if id < 0 || id >= len(Moves) || a.PP[slot] <= 0 {
+		if id < 0 || id >= len(Moves) || (!repeating && a.PP[slot] <= 0) {
 			return
 		}
-		if a.Combat.DisableSlot == slot+1 && a.Combat.DisableTurns > 0 {
+		if !repeating && a.Combat.DisableSlot == slot+1 && a.Combat.DisableTurns > 0 {
 			g.say("%s的%s暂时被封锁。", a.Name(), Moves[id].Name)
 			return
 		}
 		move = Moves[id]
+		struggle = false
 		if a.Combat.RepeatTurns <= 0 {
 			a.PP[slot]--
 		}
@@ -277,7 +283,7 @@ func (g *Game) attack(a, d *Monster, slot int) {
 	case "SWITCH_AND_TELEPORT_EFFECT":
 		if g.Battle != nil && g.Battle.Kind == "wild" {
 			g.say("野生遭遇结束。 ")
-			g.Battle = nil
+			g.leaveBattle()
 		} else {
 			g.say("训练家/玩家对战无法用此招式结束。 ")
 		}
@@ -404,16 +410,10 @@ func (g *Game) attack(a, d *Monster, slot int) {
 	if move.Effect == "HYPER_BEAM_EFFECT" && d.HP > 0 {
 		a.Combat.Recharge = 1
 	}
-	if move.Effect == "THRASH_PETAL_DANCE_EFFECT" {
-		if a.Combat.RepeatTurns == 0 {
-			a.Combat.RepeatTurns = 2 + g.rng.Intn(2)
-			a.Combat.RepeatMove = slot + 1
-		}
-		a.Combat.RepeatTurns--
-		if a.Combat.RepeatTurns == 0 {
-			a.Combat.Confusion = 2 + g.rng.Intn(4)
-			g.say("连续攻击结束，%s陷入混乱。", a.Name())
-		}
+	if move.Effect == "THRASH_PETAL_DANCE_EFFECT" && !repeating {
+		a.Combat.RepeatTurns = 2 + g.rng.Intn(2)
+		a.Combat.RepeatMove = slot + 1
+		g.advanceRepeat(a)
 	}
 	if hitSubstitute || d.HP <= 0 {
 		return
@@ -444,6 +444,17 @@ func (g *Game) attack(a, d *Monster, slot int) {
 		} else {
 			g.say("%s免疫%s。", d.Name(), status)
 		}
+	}
+}
+
+func (g *Game) advanceRepeat(a *Monster) {
+	if a.Combat.RepeatTurns <= 0 {
+		return
+	}
+	a.Combat.RepeatTurns--
+	if a.Combat.RepeatTurns == 0 {
+		a.Combat.Confusion = 2 + g.rng.Intn(4)
+		g.say("连续攻击结束，%s陷入混乱。", a.Name())
 	}
 }
 

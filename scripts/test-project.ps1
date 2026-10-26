@@ -4,9 +4,15 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $reportDirectory = Join-Path $projectRoot 'runtime/tests'
 New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null
+$previousData = $env:TABLE_CARD_DATA_DIR
+$previousAppData = $env:APPDATA
+$previousConfig = $env:XDG_CONFIG_HOME
+$env:TABLE_CARD_DATA_DIR = Join-Path $reportDirectory 'data'
+$env:APPDATA = Join-Path $reportDirectory 'appdata'
+$env:XDG_CONFIG_HOME = Join-Path $reportDirectory 'config'
 Push-Location $projectRoot
 try {
-    & go test ./... -count=1 -coverprofile (Join-Path $reportDirectory 'coverage.out') 2>&1 | Tee-Object (Join-Path $reportDirectory 'full.txt')
+    & go test ./cmd/... ./internal/... -count=1 -coverprofile (Join-Path $reportDirectory 'coverage.out') 2>&1 | Tee-Object (Join-Path $reportDirectory 'full.txt')
     if ($LASTEXITCODE -ne 0) { throw 'Full test suite failed' }
     & go tool cover -func (Join-Path $reportDirectory 'coverage.out') | Select-Object -Last 1
     & go vet ./... 2>&1 | Tee-Object (Join-Path $reportDirectory 'vet.txt')
@@ -24,7 +30,7 @@ try {
             if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) { throw 'Race tests require a working MinGW GCC compiler' }
             $env:CGO_ENABLED = '1'
             $env:CGO_CFLAGS = '-O2 -g -std=gnu11'
-            & go test -race ./... -count=1 2>&1 | Tee-Object (Join-Path $reportDirectory 'race.txt')
+            & go test -race ./cmd/... ./internal/... -count=1 2>&1 | Tee-Object (Join-Path $reportDirectory 'race.txt')
             if ($LASTEXITCODE -ne 0) { throw 'Race test suite failed' }
         } finally {
             $env:PATH = $previousPath
@@ -33,7 +39,7 @@ try {
         }
     }
     if ($Benchmarks) {
-        & go test ./internal/terminal/app ./internal/terminal/audio ./internal/goengine ./internal/pokemon ./internal/server -run '^$' -bench . -benchmem -benchtime=500ms 2>&1 | Tee-Object (Join-Path $reportDirectory 'benchmarks.txt')
+        & go test ./internal/terminal/app ./internal/terminal/audio ./internal/goengine ./internal/pokemon ./internal/server ./internal/garden -run '^$' -bench . -benchmem -benchtime=500ms 2>&1 | Tee-Object (Join-Path $reportDirectory 'benchmarks.txt')
         if ($LASTEXITCODE -ne 0) { throw 'Benchmarks failed' }
     }
     if ($Launchers) {
@@ -42,4 +48,9 @@ try {
         & (Join-Path $PSScriptRoot 'test-launchers.ps1')
     }
     Write-Host "Reports: $reportDirectory"
-} finally { Pop-Location }
+} finally {
+    Pop-Location
+    $env:TABLE_CARD_DATA_DIR = $previousData
+    $env:APPDATA = $previousAppData
+    $env:XDG_CONFIG_HOME = $previousConfig
+}

@@ -62,7 +62,30 @@ func movePriority(m *Monster, slot int) int {
 	if slot < 0 || slot >= 4 || m.Moves[slot] < 0 {
 		return 0
 	}
-	switch Moves[m.Moves[slot]].Key {
+	if m.Combat.Recharge > 0 || m.Combat.BideTurns > 0 {
+		return 0
+	}
+	id := m.Moves[slot]
+	if m.Combat.ChargeMove > 0 {
+		id = m.Combat.ChargeMove - 1
+	} else if m.Combat.RepeatTurns > 0 {
+		if m.Combat.RepeatMove < 1 || m.Combat.RepeatMove > len(m.Moves) {
+			return 0
+		}
+		id = m.Moves[m.Combat.RepeatMove-1]
+	} else {
+		usable := false
+		for i, move := range m.Moves {
+			usable = usable || (move >= 0 && m.PP[i] > 0 && (m.Combat.DisableSlot != i+1 || m.Combat.DisableTurns <= 0))
+		}
+		if !usable {
+			return 0
+		}
+	}
+	if id < 0 || id >= len(Moves) {
+		return 0
+	}
+	switch Moves[id].Key {
 	case "QUICK_ATTACK":
 		return 1
 	case "COUNTER":

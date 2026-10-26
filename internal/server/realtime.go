@@ -85,15 +85,6 @@ func (h *roomHub) roomPeers(roomCode string) []*socketPeer {
 	return peers
 }
 
-func (h *roomHub) broadcast(roomCode string, value any) {
-	for _, peer := range h.roomPeers(roomCode) {
-		if err := peer.send(value); err != nil {
-			peer.cancel()
-			h.remove(peer)
-		}
-	}
-}
-
 func (p *socketPeer) send(value any) error {
 	payload, err := json.Marshal(value)
 	if err != nil {
@@ -216,12 +207,19 @@ func (s *Server) handleSocketMessage(peer *socketPeer, room *table.Room, request
 			_ = peer.send(map[string]string{"type": "error", "error": "聊天需为1到300个可见字符，不能包含终端控制符"})
 			return
 		}
-		s.hub.broadcast(peer.roomCode, map[string]any{
-			"type": "chat", "playerId": peer.playerID, "name": peer.name, "text": text,
-		})
+		message := map[string]any{"type": "chat", "scope": "room", "roomCode": peer.roomCode, "playerId": peer.playerID, "name": peer.name, "text": text}
+		delivered := map[string]bool{}
 		for _, player := range room.Snapshot().Players {
 			if !player.Bot {
-				s.sendToSocial(player.ID, map[string]any{"type": "chat", "scope": "room", "roomCode": peer.roomCode, "playerId": peer.playerID, "name": peer.name, "text": text})
+				delivered[player.ID] = s.sendToSocial(player.ID, message)
+			}
+		}
+		for _, recipient := range s.hub.roomPeers(peer.roomCode) {
+			if !delivered[recipient.playerID] {
+				if err := recipient.send(message); err != nil {
+					recipient.cancel()
+					s.hub.remove(recipient)
+				}
 			}
 		}
 	case "action":

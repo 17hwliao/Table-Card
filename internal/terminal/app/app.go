@@ -21,6 +21,7 @@ import (
 	"github.com/17hwliao/table-card-independent/internal/terminal/netclient"
 	"github.com/17hwliao/table-card-independent/internal/terminal/profile"
 	modeui "github.com/17hwliao/table-card-independent/internal/terminal/ui"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type screen uint8
@@ -133,6 +134,7 @@ type Model struct {
 	quickChat                                bool
 	chatLog                                  []string
 	rendering                                bool
+	frameTooSmall                            bool
 }
 
 func New(address, playerName string) *Model {
@@ -211,11 +213,14 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "已恢复房间连接"
 		return m, readSocket(m.api)
 	case tea.MouseClickMsg:
-		if m.page == gameScreen && !m.chatOn && !m.quickChat && !m.socialPanel && m.overlay == "" && msg.Button == tea.MouseLeft {
+		if m.page == gameScreen && !m.frameTooSmall && !m.chatOn && !m.quickChat && !m.socialPanel && m.overlay == "" && msg.Button == tea.MouseLeft {
 			if control, ok := m.control.(interface {
 				Mouse(modeui.Snapshot, int, int) modeui.Result
 			}); ok {
-				return m, m.submit(control.Mouse(m.controllerSnapshot(), msg.X, msg.Y-2))
+				snapshot := m.controllerSnapshot()
+				if msg.X >= 0 && msg.X < snapshot.Width {
+					return m, m.submit(control.Mouse(snapshot, msg.X, msg.Y-2))
+				}
 			}
 		}
 		return m, nil
@@ -346,7 +351,11 @@ func (m *Model) applyEnvelope(envelope netclient.Envelope) {
 	case "state":
 		_ = json.Unmarshal(envelope.Room, &m.room)
 		if len(m.game) > 0 && !bytes.Equal(m.game, envelope.Game) {
-			if m.room.Mode != table.TetrisMode {
+			if m.room.Mode == table.GardenMode {
+				if seed, play := gardenEffect(m.game, envelope.Game, m.player.ID); play {
+					m.sound.Effect(seed)
+				}
+			} else if m.room.Mode != table.TetrisMode {
 				m.sound.Effect(effectSeed(envelope.Game))
 			} else if seed, play := tetrisEffect(m.game, envelope.Game, m.player.ID); play {
 				m.sound.Effect(seed)
@@ -528,16 +537,25 @@ func (m *Model) homeKey(key string) tea.Cmd {
 	if key == "q" {
 		return tea.Quit
 	}
+	if m.frameTooSmall {
+		if key == "esc" {
+			m.menuOn = false
+		}
+		return nil
+	}
 	if len(m.modes) == 0 {
 		return nil
 	}
 	if m.menuOn {
 		return m.menuKey(key)
 	}
-	if key == "0" || key == "p" {
+	if key == "0" || key == "p" || key == "g" {
 		target := table.SnakeMode
 		if key == "p" {
 			target = table.PokemonMode
+		}
+		if key == "g" {
+			target = table.GardenMode
 		}
 		for i, item := range m.modes {
 			if item.ID == target {
@@ -594,6 +612,9 @@ func (m *Model) homeKey(key string) tea.Cmd {
 }
 
 func (m *Model) roomKey(key string) tea.Cmd {
+	if m.frameTooSmall && key != "esc" && key != "q" && key != "delete" {
+		return nil
+	}
 	switch key {
 	case "r":
 		ready := true
@@ -626,6 +647,9 @@ func (m *Model) gameKey(key string) tea.Cmd {
 	if key == "delete" {
 		return m.leave()
 	}
+	if m.frameTooSmall {
+		return nil
+	}
 	if key == "f2" {
 		return m.rematch()
 	}
@@ -647,7 +671,7 @@ func (m *Model) controllerSnapshot() modeui.Snapshot {
 	width, height := m.width, m.height
 	if !m.rendering {
 		if width >= 120 {
-			width -= 31
+			width = mainContentWidth(width)
 		}
 		height = max(12, height-m.socialChatRows())
 	}
@@ -794,7 +818,7 @@ func (m *Model) View() tea.View {
 	sideWidth := 0
 	if fullWidth >= 120 {
 		sideWidth = 29
-		m.width -= sideWidth + 2
+		m.width = mainContentWidth(fullWidth)
 	}
 	chatRows := m.socialChatRows()
 	m.height = max(12, m.height-chatRows)
@@ -819,6 +843,7 @@ func (m *Model) View() tea.View {
 		content = m.overlayView()
 	}
 	mainWidth := m.width
+	content = fitFrameWidth(content, mainWidth)
 	m.width, m.height = fullWidth, fullHeight
 	m.rendering = false
 	if m.socialPanel {
@@ -827,13 +852,64 @@ func (m *Model) View() tea.View {
 		content = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(mainWidth).Render(content), " │ ", m.socialSidebar(sideWidth, max(8, fullHeight-chatRows)))
 	}
 	content += "\n" + m.socialChatView(fullWidth)
+	content = fitFrameWidth(content, fullWidth)
+	neededRows := strings.Count(content, "\n") + 1
+	m.frameTooSmall = neededRows > fullHeight
+	if m.frameTooSmall {
+		content = m.frameSizeWarning(fullWidth, fullHeight, neededRows)
+	}
 	v := tea.NewView(strings.ReplaceAll(content, "\x00", ""))
 	v.AltScreen = true
 	v.WindowTitle = "牌桌 Card Table"
-	if m.page == gameScreen && m.overlay == "" && m.room.Mode != table.TetrisMode {
+	if m.page == gameScreen && !m.frameTooSmall && m.overlay == "" && m.room.Mode != table.TetrisMode {
 		v.MouseMode = tea.MouseModeCellMotion
 	}
 	return v
+}
+
+func (m *Model) frameSizeWarning(width, height, neededRows int) string {
+	rows := []string{
+		fmt.Sprintf("终端空间不足：当前%d×%d，完整界面需要至少%d行", width, height, neededRows),
+		"请放大窗口以显示完整界面；放大后自动恢复。",
+	}
+	if m.page == gameScreen || m.page == roomScreen {
+		rows = append(rows, "对局时钟仍在运行；按 Del 离桌回到模式大厅。")
+	} else if m.page == snakeScreen {
+		rows = append(rows, "游戏不会自动暂停；按 Esc 暂停，或 Del 返回菜单。")
+	} else if m.page == homeScreen {
+		rows = append(rows, "Ctrl+C 退出；大厅按 Esc 返回模式选择。")
+	} else {
+		rows = append(rows, "放大终端恢复；Ctrl+C 按原有流程保存并退出。")
+	}
+	return fitFrameWidth(strings.Join(rows[:min(len(rows), max(0, height))], "\n"), width)
+}
+
+func mainContentWidth(width int) int {
+	if width >= 120 {
+		return width - 29 - ansi.StringWidth(" │ ")
+	}
+	return width
+}
+
+func fitFrameWidth(content string, width int) string {
+	width = max(1, width)
+	for row := range strings.SplitSeq(content, "\n") {
+		if ansi.StringWidth(row) <= width {
+			continue
+		}
+		var out strings.Builder
+		out.Grow(len(content))
+		first := true
+		for line := range strings.SplitSeq(content, "\n") {
+			if !first {
+				out.WriteByte('\n')
+			}
+			first = false
+			out.WriteString(ansi.Truncate(line, width, "…"))
+		}
+		return out.String()
+	}
+	return content
 }
 
 func (m *Model) homeView() string {
@@ -856,6 +932,9 @@ func (m *Model) homeView() string {
 		if item.ID == table.PokemonMode {
 			shortcut = "P"
 		}
+		if item.ID == table.GardenMode {
+			shortcut = "G"
+		}
 		rows = append(rows, style.Render(fmt.Sprintf("%s%s. %-12s %s", marker, shortcut, item.Name, item.Progress)))
 	}
 	menu := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#426A58")).Padding(1, 2).Width(minInt(78, maxInt(42, m.width-8))).Render(strings.Join(rows, "\n"))
@@ -875,7 +954,7 @@ func (m *Model) homeView() string {
 	if m.bots {
 		settings += fmt.Sprintf("    Sunjiajia ×%d", m.seats-1)
 	}
-	keys := "↑/↓ 选模式 · 1–9 多人 / 0 贪吃蛇 / P 宝可梦 · Enter 进入\nE 改名 · M 声音 · F5 重连服务 · Q 退出"
+	keys := "↑/↓ 选模式 · 1–9 桌游 / G 草坪接力 / 0 贪吃蛇 / P 宝可梦\nEnter 进入 · E 改名 · M 声音 · F5 重连服务 · Q 退出"
 	content := lipgloss.JoinVertical(lipgloss.Center, title, intro, "", menu, settings, "", statusStyle.Render(m.status), muted.Render(keys))
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
@@ -922,12 +1001,17 @@ func (m *Model) gameView() string {
 	view := m.control.View(m.controllerSnapshot())
 	header := titleStyle.Render(fmt.Sprintf("牌桌  /  %s  /  房间 %s", m.room.Mode, m.room.Code))
 	help := muted.Render("/ 英文聊天 · F3 短语 · Esc 取消 · Del 离桌 · F1 规则 · F2 再玩 · M 声音")
+	header = fitFrameWidth(header, m.width)
+	if m.width < 72 {
+		help = muted.Render("/聊天 F3短语 Esc取消 Del离桌 F1规则 F2重开 M声音")
+	}
+	help = fitFrameWidth(help, m.width)
 	chat := ""
 	status := m.status
-	if m.room.Mode == table.TetrisMode {
+	if m.room.Mode == table.TetrisMode || m.room.Mode == table.GardenMode {
 		// Use the available rows for the board. Chat shares the status row rather
 		// than pushing the controls below a typical 30-row terminal window.
-		return modeui.JoinLeft(header, "", view, statusStyle.Render(status), help)
+		return modeui.JoinLeft(header, "", view, fitFrameWidth(statusStyle.Render(status), m.width), help)
 	}
 	if remaining := m.pauseUntil - time.Now().Unix(); remaining > 0 {
 		stage := "枪决结果"

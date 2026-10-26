@@ -6,6 +6,9 @@ $previousData = $env:TABLE_CARD_DATA_DIR
 $env:TABLE_CARD_DATA_DIR = Join-Path $projectRoot 'runtime/startup-smoke/data'
 $windowsPowerShell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
 try {
+    & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-script-encoding.ps1') -Root $projectRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell script compatibility check failed' }
+    $expectedModes = @('landlord','liar_bar','mahjong','chess','western_chess','gomoku','go','uno','tetris','garden_relay')
     foreach ($stopShell in @('current','windows51')) {
         $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0)
         $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
@@ -19,7 +22,8 @@ try {
             $health = Invoke-RestMethod "http://127.0.0.1:$port/api/health" -TimeoutSec 3
             $modes = Invoke-RestMethod "http://127.0.0.1:$port/api/modes" -TimeoutSec 3
             $addresses = Invoke-RestMethod "http://127.0.0.1:$port/api/connection-info" -TimeoutSec 3
-            if ($health.protocol -ne 2 -or $modes.Count -ne 9 -or $addresses.local -ne "127.0.0.1:$port") {
+            $modeDifference = @(Compare-Object -ReferenceObject $expectedModes -DifferenceObject @($modes | ForEach-Object { $_.id }))
+            if ($health.protocol -ne 2 -or $modeDifference.Count -ne 0 -or $addresses.local -ne "127.0.0.1:$port") {
                 throw 'Server health, mode list or connection address check failed'
             }
             # A mismatched timestamp must still refuse to terminate a process.

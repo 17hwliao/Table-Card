@@ -22,6 +22,10 @@ $tetrisBatchPath = Join-Path $DesktopPath '牌桌俄罗斯方块.bat'
 $tetrisContent = "@echo off`r`nsetlocal`r`nchcp 65001 >nul`r`necho Start the terminal lobby and select mode 9 - Tetris.`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$escapedEntry`" -PromptClients -Port 19881 %*`r`npause`r`n"
 [IO.File]::WriteAllText($tetrisBatchPath, $tetrisContent, [Text.UTF8Encoding]::new($false))
 Write-Host "已创建俄罗斯方块启动入口：$tetrisBatchPath"
+$gardenBatchPath = Join-Path $DesktopPath '牌桌草坪接力.bat'
+$gardenContent = "@echo off`r`nsetlocal`r`nchcp 65001 >nul`r`necho Select G in the terminal lobby for Garden Relay.`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$escapedEntry`" -PromptClients -Port 20881 %*`r`npause`r`n"
+[IO.File]::WriteAllText($gardenBatchPath, $gardenContent, [Text.UTF8Encoding]::new($false))
+Write-Host "已创建草坪接力独立端口启动入口：$gardenBatchPath"
 $serverBatchPath = Join-Path $DesktopPath '牌桌服务端.bat'
 $serverContent = "@echo off`r`nsetlocal`r`nchcp 65001 >nul`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$escapedEntry`" -ServerOnly %*`r`npause`r`n"
 [IO.File]::WriteAllText($serverBatchPath, $serverContent, [Text.UTF8Encoding]::new($false))

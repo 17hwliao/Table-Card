@@ -1,6 +1,7 @@
 package pokemon
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
@@ -18,13 +19,26 @@ func winBattle(t *testing.T, g *Game) {
 		g.Battle.Foes[g.Battle.Enemy].HP = 1
 		g.Party[g.Battle.Active].HP = g.Party[g.Battle.Active].MaxHP()
 		g.Party[g.Battle.Active].Status = ""
-		g.Party[g.Battle.Active].PP[1] = Moves[g.Party[g.Battle.Active].Moves[1]].PP
-		if err := g.Command("招式 2"); err != nil {
+		// Slot order changes when factual moves are sanitized during healing.
+		// Select a damaging legal move for this story-gate fixture each turn.
+		p, f := &g.Party[g.Battle.Active], &g.Battle.Foes[g.Battle.Enemy]
+		ResetCombat(p)
+		best, score := -1, 0.0
+		for slot, id := range p.Moves {
+			if id >= 0 && damageEstimate(p, f, Moves[id]) > score {
+				best, score = slot, damageEstimate(p, f, Moves[id])
+			}
+		}
+		if best < 0 {
+			t.Fatal("fixture has no damaging legal move")
+		}
+		p.PP[best] = Moves[p.Moves[best]].PP
+		if err := g.Command(fmt.Sprintf("move %d", best+1)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if g.Battle != nil {
-		t.Fatal("fixture battle did not finish")
+		t.Fatalf("fixture battle did not finish: battle=%+v party=%+v log=%v", g.Battle, g.Party, g.Log[max(0, len(g.Log)-12):])
 	}
 }
 func TestFullKantoStoryAndChampionSave(t *testing.T) {

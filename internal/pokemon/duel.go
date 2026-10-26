@@ -88,18 +88,8 @@ func (d *Duel) Submit(seat int, a DuelAction) error {
 		if a.Slot < 0 || a.Slot >= 4 {
 			return errors.New("技能编号为1至4")
 		}
-		if p.Moves[a.Slot] < 0 {
-			return errors.New("该槽位尚未学习技能")
-		}
-		hasPP := false
-		for _, pp := range p.PP {
-			hasPP = hasPP || pp > 0
-		}
-		if hasPP && p.PP[a.Slot] <= 0 {
-			return errors.New("该技能PP耗尽")
-		}
-		if p.Combat.DisableSlot == a.Slot+1 && p.Combat.DisableTurns > 0 {
-			return errors.New("该技能暂时被封锁，请选择其他招式")
+		if err := validateBattleMove(&p, a.Slot); err != nil {
+			return err
 		}
 	case "switch":
 		if a.Slot < 0 || a.Slot >= len(d.Teams[seat]) || a.Slot == d.Active[seat] || d.Teams[seat][a.Slot].HP <= 0 {

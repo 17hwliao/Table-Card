@@ -14,7 +14,7 @@ $runtimeDir = Join-Path $projectRoot 'runtime'
 function Test-CompatibleServer([string]$Address) {
     try {
         $health = Invoke-RestMethod -Uri "http://$Address/api/health" -TimeoutSec 3
-        return ($health.service -ceq 'table-card' -and $health.protocol -eq 2 -and $health.rulesVersion -ceq '2026.10.10-social-pokemon')
+        return ($health.service -ceq 'table-card' -and $health.protocol -eq 2 -and $health.rulesVersion -ceq '2026.10.26-maintenance')
     } catch { return $false }
 }
 
@@ -155,7 +155,7 @@ try {
     $clientPath = Join-Path $programDir 'table-card.exe'
     $serverPath = Join-Path $programDir 'table-card-server.exe'
     if ($remote) {
-        if (-not (Test-CompatibleServer $address)) { throw "无法连接兼容的牌桌服务：$address。请房主使用本次维护版服务端（规则版本2026.10.10-social-pokemon）并重新启动。" }
+        if (-not (Test-CompatibleServer $address)) { throw "无法连接兼容的牌桌服务：$address。请房主使用本次维护版服务端（规则版本2026.10.26-maintenance）并重新启动。" }
     } elseif (Test-CompatibleServer $address) {
         Write-Host "已发现本地牌桌服务（$Port），客户端将直接连接。"
     } else {
